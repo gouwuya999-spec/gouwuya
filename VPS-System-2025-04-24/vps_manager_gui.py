@@ -708,6 +708,10 @@ class VPSManagerGUI:
                     else:
                         tag = "bill_non_nat"
                     
+                    # 确保bill_values的长度与列数一致
+                    if len(bill_values) < 10:  # 列数为10
+                        bill_values.extend([''] * (10 - len(bill_values)))
+                    
                     self.bill_tree.insert('', tk.END, text=vps_name, values=bill_values, tags=(tag,))
             
             # 设置账单表格中的字体颜色
@@ -736,11 +740,13 @@ class VPSManagerGUI:
             
             # 设置总计行字体
             self.bill_tree.tag_configure("summary", font=("Helvetica", 10, "bold"))
+            self.bill_tree.tag_configure("summary_header", font=("Helvetica", 9, "bold"))
+            self.bill_tree.tag_configure("summary_item", foreground="#2E8B57")
             
             # 更新UI中显示的费用
-            self.nat_vps_fee_var.set(f"${nat_vps_total_fee:.2f}")
-            self.non_nat_vps_fee_var.set(f"${non_nat_vps_total_fee:.2f}")
-            self.summary_nat_fee_var.set(f"${nat_fee:.2f}" if has_nat_vps and nat_fee > 0 else "$0.00")
+            self.nat_vps_fee_var.set(f"${bill_nat_vps_fee:.2f}")
+            self.non_nat_vps_fee_var.set(f"${bill_non_nat_vps_fee:.2f}")
+            self.summary_nat_fee_var.set(f"${nat_fee:.2f}" if has_nat_vps else "$0.00")
             self.summary_total_var.set(f"${total_bill:.2f}")
             
             # 更新NAT总费用显示
@@ -1907,6 +1913,10 @@ class VPSManagerGUI:
                     else:
                         tag = "bill_non_nat"
                     
+                    # 确保bill_values的长度与列数一致
+                    if len(bill_values) < 10:  # 列数为10
+                        bill_values.extend([''] * (10 - len(bill_values)))
+                    
                     self.bill_tree.insert('', tk.END, text=vps_name, values=bill_values, tags=(tag,))
             
             # 设置账单表格中的字体颜色
@@ -1919,8 +1929,31 @@ class VPSManagerGUI:
             
             # 添加NAT总费用行（仅当有使用NAT的VPS时）
             if has_nat_vps and nat_fee > 0:
-                nat_row = ['', '', '', '', '', '', '', 'NAT总费用', f"{nat_fee:.2f}"]
+                nat_row = ['', '', '', '', '', '', '', '', 'NAT费用', f"{nat_fee:.2f}"]
                 self.bill_tree.insert('', tk.END, text="", values=nat_row, tags=('summary',))
+            
+            # 添加空行分隔
+            empty_row = [''] * 10  # 确保有10列
+            self.bill_tree.insert('', tk.END, text="", values=empty_row)
+            
+            # 添加费用类型汇总表格
+            header_row = ['费用类型'] + [''] * 8 + ['金额($)']  # 确保有10列
+            self.bill_tree.insert('', tk.END, text="", values=header_row, tags=('summary_header',))
+            
+            # 添加未使用NAT的VPS费用
+            non_nat_row = ['未使用NAT的VPS费用'] + [''] * 8 + [f"{bill_non_nat_vps_fee:.2f}"]  # 确保有10列
+            self.bill_tree.insert('', tk.END, text="", values=non_nat_row, tags=('summary_item',))
+            
+            # 添加使用NAT的VPS费用
+            nat_vps_row = ['使用NAT的VPS费用'] + [''] * 8 + [f"{bill_nat_vps_fee:.2f}"]  # 确保有10列
+            self.bill_tree.insert('', tk.END, text="", values=nat_vps_row, tags=('summary_item',))
+            
+            # 添加NAT费用
+            nat_fee_row = ['NAT费用'] + [''] * 8 + [f"{nat_fee:.2f}"]  # 确保有10列
+            self.bill_tree.insert('', tk.END, text="", values=nat_fee_row, tags=('summary_item',))
+            
+            # 添加空行分隔
+            self.bill_tree.insert('', tk.END, text="", values=empty_row)
             
             # 计算总金额
             total_bill = bill_nat_vps_fee + bill_non_nat_vps_fee
@@ -1928,17 +1961,13 @@ class VPSManagerGUI:
                 total_bill += nat_fee
             
             # 添加总金额行
-            total_row = ['', '', '', '', '', '', '', '总金额', f"{total_bill:.2f}"]
+            total_row = [''] * 8 + ['总金额', f"{total_bill:.2f}"]  # 确保有10列
             self.bill_tree.insert('', tk.END, text="", values=total_row, tags=('summary',))
             
             # 设置总计行字体
             self.bill_tree.tag_configure("summary", font=("Helvetica", 10, "bold"))
-            
-            # 更新UI中显示的费用
-            self.nat_vps_fee_var.set(f"${bill_nat_vps_fee:.2f}")
-            self.non_nat_vps_fee_var.set(f"${bill_non_nat_vps_fee:.2f}")
-            self.summary_nat_fee_var.set(f"${nat_fee:.2f}" if has_nat_vps else "$0.00")
-            self.summary_total_var.set(f"${total_bill:.2f}")
+            self.bill_tree.tag_configure("summary_header", font=("Helvetica", 9, "bold"))
+            self.bill_tree.tag_configure("summary_item", foreground="#2E8B57")
             
             # 更新NAT总费用显示
             self.nat_total_var.set(f"${nat_fee:.2f}")
@@ -2406,6 +2435,10 @@ class VPSManagerGUI:
         for col in columns:
             self.bill_tree.heading(col, text=col)
             self.bill_tree.column(col, width=100, anchor=tk.CENTER)
+        
+        # 设置第一列和最后一列的宽度更宽
+        self.bill_tree.column("VPS名称", width=150)
+        self.bill_tree.column("总金额", width=100)
         
         # 创建自定义样式 - 设置表格边框为深草绿色而不是背景
         style = ttk.Style()

@@ -49,18 +49,36 @@ class BillingManager:
         初始化账单管理器
         
         Args:
-            config_file (str): VPS配置文件路径
+            config_file (str, optional): 配置文件路径
         """
+        # 设置日志
+        self.logger = logging.getLogger(__name__)
+        
+        # 配置文件
         self.config_file = config_file
+        
+        # VPS数据列表
         self.vps_data = []
+        
+        # 默认使用当前月份
+        now = datetime.datetime.now()
+        self.billing_year = now.year
+        self.billing_month = now.month
+        
+        # NAT费用
         self.nat_total_fee = 0
-        self.billing_year = datetime.datetime.now().year
-        self.billing_month = datetime.datetime.now().month
-        self.exchange_rate_cache = None  # 用于缓存汇率
+        
+        # 分类统计的费用
+        self.non_nat_vps_total = 0
+        self.nat_vps_total = 0
+        
+        # 总账单金额
+        self.total_bill = 0
         
         # 确保字体目录存在
         self.ensure_fonts_directory()
         
+        # 加载数据
         self.load_data()
         
     def ensure_fonts_directory(self):
@@ -489,9 +507,52 @@ class BillingManager:
         # 确保重新计算NAT费用
         self.reset_nat_fee()
         
-        # 计算所有VPS的费用总和
-        vps_total = sum(float(vps.get('total_price', 0)) for vps in self.vps_data)
-        vps_total = round(vps_total, 2)  # 确保VPS总费用精确到2位小数
+        # 分别计算使用NAT和未使用NAT的VPS费用
+        nat_vps_total = 0.0
+        non_nat_vps_total = 0.0
+        
+        # 获取当前时间，用于实时计算
+        current_time = datetime.datetime.now()
+        is_current_month = (year == current_time.year and month == current_time.month)
+        
+        # 计算每个VPS的费用并归类
+        for vps in self.vps_data:
+            # 计算使用时长
+            if is_current_month:
+                # 当前月需要传入now参数进行实时计算
+                usage_result = self.calculate_usage_period(vps, year, month, now=current_time)
+            else:
+                # 历史月份使用整月计算
+                usage_result = self.calculate_usage_period(vps, year, month)
+                
+            if isinstance(usage_result, tuple) and len(usage_result) == 4:
+                usage_string, days, hours, minutes = usage_result
+                
+                # 只有使用时长大于0的才计算费用
+                if days > 0 or hours > 0 or minutes > 0:
+                    # 实时计算价格
+                    price_per_month = vps.get('price_per_month', 0)
+                    
+                    # 对于当前月，始终使用实时计算
+                    if is_current_month:
+                        total_price = self.calculate_price(price_per_month, days, hours, minutes, year, month)
+                    else:
+                        # 非当前月，使用完整的计算方法，可能按整月计费
+                        total_price = self.calculate_price_with_purchase_date(vps, year, month)
+                    
+                    total_price = round(total_price, 2)  # 确保总价精确到2位小数
+                    
+                    # 将费用添加到对应分类中
+                    if vps.get('use_nat', False):
+                        nat_vps_total += total_price
+                    else:
+                        non_nat_vps_total += total_price
+        
+        # 确保费用精确到2位小数
+        nat_vps_total = round(nat_vps_total, 2)
+        non_nat_vps_total = round(non_nat_vps_total, 2)
+        vps_total = nat_vps_total + non_nat_vps_total
+        vps_total = round(vps_total, 2)
         
         # 检查是否有设置为使用NAT的VPS，不管其状态如何
         nat_vps_list = [vps for vps in self.vps_data if vps.get('use_nat', False) is True]
@@ -509,6 +570,9 @@ class BillingManager:
         is_current_month = (year == current_year and month == current_month)
         if is_current_month:
             self.nat_total_fee = nat_fee
+            # 保存分类费用数据
+            self.non_nat_vps_total = non_nat_vps_total
+            self.nat_vps_total = nat_vps_total
         
         # 计算总费用
         total = vps_total + nat_fee
@@ -518,8 +582,15 @@ class BillingManager:
         if is_current_month:
             self.total_bill = total
         
-        logger.info(f"计算{year}年{month}月总账单金额: VPS总费用={vps_total:.2f}, NAT费用={nat_fee:.2f}, 总计={total:.2f}")
-        return total
+        logger.info(f"计算{year}年{month}月总账单金额: 非NAT VPS费用={non_nat_vps_total:.2f}, 使用NAT的VPS费用={nat_vps_total:.2f}, NAT费用={nat_fee:.2f}, 总计={total:.2f}")
+        
+        # 返回费用分类信息和总金额
+        return {
+            'non_nat_vps_total': non_nat_vps_total,
+            'nat_vps_total': nat_vps_total,
+            'nat_fee': nat_fee,
+            'total': total
+        }
     
     def to_dataframe(self, year=None, month=None):
         """
@@ -564,6 +635,10 @@ class BillingManager:
         current_time = datetime.datetime.now()
         is_current_month = (billing_year == current_time.year and billing_month == current_time.month)
         
+        # 分别存储使用NAT和未使用NAT的VPS总金额
+        nat_vps_total = 0.0
+        non_nat_vps_total = 0.0
+        
         # 遍历VPS数据，计算对应月份的使用时长和费用
         for vps in self.vps_data:
             # 重新计算指定月份的使用时长
@@ -591,6 +666,12 @@ class BillingManager:
                     
                     total_price = round(total_price, 2)  # 确保总价精确到2位小数
                     
+                    # 将费用添加到对应分类中
+                    if vps.get('use_nat', False):
+                        nat_vps_total += total_price
+                    else:
+                        non_nat_vps_total += total_price
+                    
                     # 准备行数据
                     row = [
                         vps.get('name', ''),
@@ -616,6 +697,23 @@ class BillingManager:
             nat_fee = self.calculate_nat_fee(billing_year, billing_month)
             logger.info(f"在to_dataframe中计算的{billing_year}年{billing_month}月NAT费用: {nat_fee}")
         
+        # 确保费用精确到2位小数
+        nat_vps_total = round(nat_vps_total, 2)
+        non_nat_vps_total = round(non_nat_vps_total, 2)
+        nat_fee = round(nat_fee, 2)
+        total_bill = nat_vps_total + non_nat_vps_total + nat_fee
+        total_bill = round(total_bill, 2)
+        
+        # 添加一个空行作为分隔
+        df.loc[len(df)] = ['', '', '', '', '', '', '', '']
+        
+        # 添加费用类型汇总表格
+        df.loc[len(df)] = ['费用类型', '', '', '', '', '', '', '金额($)']
+        df.loc[len(df)] = ['未使用NAT的VPS费用', '', '', '', '', '', '', non_nat_vps_total]
+        df.loc[len(df)] = ['使用NAT的VPS费用', '', '', '', '', '', '', nat_vps_total]
+        df.loc[len(df)] = ['NAT费用', '', '', '', '', '', '', nat_fee]
+        df.loc[len(df)] = ['总金额', '', '', '', '', '', '', total_bill]
+        
         # 添加NAT总费用行（仅当NAT费用大于0时）
         if nat_fee > 0:
             # 获取指定年月的实时汇率
@@ -626,10 +724,6 @@ class BillingManager:
             nat_description = f'NAT费用(按当月实时汇率¥{exchange_rate_display}:$1)'
             nat_row = ['', '', '', '', '', '', nat_description, round(nat_fee, 2)]
             df.loc[len(df)] = nat_row
-        
-        # 计算当前月份的总金额
-        total_bill = df["总金额"].sum()
-        total_bill = round(total_bill, 2)  # 确保总费用精确到2位小数
         
         # 添加总计行
         total_row = ['', '', '', '', '', '', '总计', total_bill]
@@ -1847,6 +1941,10 @@ class BillingManager:
             vps_list = self.get_all_vps()
             active_vps_count = 0
             
+            # 分别存储使用NAT和未使用NAT的VPS总金额
+            nat_vps_total = 0.0
+            non_nat_vps_total = 0.0
+            
             # 构建指定年月的最后一天日期，用于比较
             try:
                 last_day_of_month = calendar.monthrange(year, month)[1]
@@ -1927,6 +2025,12 @@ class BillingManager:
                         
                         total_price = round(total_price, 2)  # 确保价格精确到2位小数
                         
+                        # 将费用添加到对应分类中
+                        if vps.get('use_nat', False):
+                            nat_vps_total += total_price
+                        else:
+                            non_nat_vps_total += total_price
+                        
                         # 添加到账单行
                         bill_row = {
                             'VPS名称': vps.get('name', '未命名'),
@@ -1959,6 +2063,14 @@ class BillingManager:
             bill_data['VPS数量'] = active_vps_count
             bill_data['NAT费用'] = nat_fee
             bill_data['月总费用'] = total_bill
+            
+            # 添加费用类型汇总数据
+            bill_data['费用汇总'] = {
+                '未使用NAT的VPS费用': round(non_nat_vps_total, 2),
+                '使用NAT的VPS费用': round(nat_vps_total, 2),
+                'NAT费用': nat_fee,
+                '总金额': total_bill
+            }
             
             # 如果NAT费用大于0，添加NAT使用详情
             if nat_fee > 0:
@@ -2075,6 +2187,58 @@ class BillingManager:
                             '单价': row.get('月单价', 0),
                             '合计（$）': row.get('总金额', 0)
                         }])], ignore_index=True)
+                    
+                    # 添加空行分隔
+                    empty_row = pd.Series({
+                        'VPS名称': '',
+                        '使用状态': '',
+                        '使用时长': '',
+                        '单价': '',
+                        '合计（$）': ''
+                    })
+                    month_df = pd.concat([month_df, pd.DataFrame([empty_row])], ignore_index=True)
+                    
+                    # 添加费用汇总表格
+                    if '费用汇总' in bill_data:
+                        fee_summary = bill_data['费用汇总']
+                        
+                        # 添加表头
+                        summary_header = pd.Series({
+                            'VPS名称': '费用类型',
+                            '合计（$）': '金额($)'
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([summary_header])], ignore_index=True)
+                        
+                        # 添加未使用NAT的VPS费用
+                        non_nat_row = pd.Series({
+                            'VPS名称': '未使用NAT的VPS费用',
+                            '合计（$）': fee_summary.get('未使用NAT的VPS费用', 0)
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([non_nat_row])], ignore_index=True)
+                        
+                        # 添加使用NAT的VPS费用
+                        nat_vps_row = pd.Series({
+                            'VPS名称': '使用NAT的VPS费用',
+                            '合计（$）': fee_summary.get('使用NAT的VPS费用', 0)
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([nat_vps_row])], ignore_index=True)
+                        
+                        # 添加NAT费用
+                        nat_fee_row = pd.Series({
+                            'VPS名称': 'NAT费用',
+                            '合计（$）': fee_summary.get('NAT费用', 0)
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([nat_fee_row])], ignore_index=True)
+                        
+                        # 添加总金额
+                        total_summary_row = pd.Series({
+                            'VPS名称': '总金额',
+                            '合计（$）': fee_summary.get('总金额', 0)
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([total_summary_row])], ignore_index=True)
+                        
+                        # 再添加一个空行
+                        month_df = pd.concat([month_df, pd.DataFrame([empty_row])], ignore_index=True)
                     
                     # 添加NAT费用和总计行
                     if bill_data['NAT费用'] > 0:
