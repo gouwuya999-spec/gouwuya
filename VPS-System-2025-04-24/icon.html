@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>VPS管理系统图标</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #333;
+    }
+    .icon {
+      width: 256px;
+      height: 256px;
+      background-color: #2196F3;
+      border-radius: 50px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-family: Arial, sans-serif;
+      position: relative;
+    }
+    .server {
+      width: 120px;
+      height: 80px;
+      background-color: white;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .server:before {
+      content: "";
+      position: absolute;
+      width: 100px;
+      height: 16px;
+      background-color: #444;
+      top: 16px;
+      border-radius: 3px;
+    }
+    .server:after {
+      content: "";
+      position: absolute;
+      width: 100px;
+      height: 16px;
+      background-color: #444;
+      bottom: 16px;
+      border-radius: 3px;
+    }
+    .wg {
+      font-size: 40px;
+      font-weight: bold;
+      position: relative;
+    }
+    .connection {
+      position: absolute;
+      width: 180px;
+      height: 5px;
+      background-color: rgba(255, 255, 255, 0.7);
+      transform: rotate(45deg);
+      bottom: 80px;
+      right: -40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="icon">
+    <div class="server"></div>
+    <div class="wg">WG</div>
+    <div class="connection"></div>
+  </div>
+</body>
+</html> 
