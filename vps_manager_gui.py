@@ -575,204 +575,50 @@ class VPSManagerGUI:
             self.nat_fee_button.pack_forget()
             
     def load_vps_data(self, refresh_billing=False):
-        """从VPS管理器加载VPS数据并显示在界面上"""
+        """加载VPS数据"""
         try:
-            # 清空现有数据
-            for item in self.vps_tree.get_children():
-                self.vps_tree.delete(item)
-                
-            for item in self.bill_tree.get_children():
-                self.bill_tree.delete(item)
-                
-            # 更新VPS下拉菜单
-            vps_names = []
-            
-            # 获取所有VPS数据
-            vps_data = self.vps_manager.billing_manager.get_all_vps()
+            self.status_var.set("正在加载VPS数据...")
+            self.vps_manager.billing_manager.load_data()
             
             # 检查是否有使用NAT的VPS
-            nat_vps_list = [vps for vps in vps_data if vps.get('use_nat', False) is True]
-            has_nat_vps = len(nat_vps_list) > 0
-            non_nat_vps_list = [vps for vps in vps_data if not vps.get('use_nat', False)]
+            nat_vps_count = sum(1 for vps in self.vps_manager.billing_manager.get_all_vps() if vps.get('use_nat', False))
+            has_nat_vps = nat_vps_count > 0
             
-            # 更新NAT相关UI组件的显示状态
+            # 根据是否有NAT VPS更新UI可见性
             self.update_nat_ui_visibility(has_nat_vps)
             self.update_billing_nat_ui_visibility(has_nat_vps)
             
-            # 按10个一组分组NAT VPS
-            nat_vps_groups = [nat_vps_list[i:i+10] for i in range(0, len(nat_vps_list), 10)] if has_nat_vps else []
+            # 仅刷新显示，不重新计算使用时长
+            # 强制开启实时计算，确保价格更新
+            self.update_vps_display_only(need_real_time_calculation=True)
             
-            # 更新VPS列表 - 先添加NAT VPS
-            group_index = 0
-            for group in nat_vps_groups:
-                group_index += 1
-                for i, vps in enumerate(group):
-                    vps_names.append(vps.get('name'))
-                    values = [
-                        vps.get('name', ''),
-                        vps.get('host', ''),
-                        vps.get('country', ''),
-                        '是' if vps.get('use_nat', False) else '否',
-                        vps.get('status', ''),
-                        vps.get('purchase_date', ''),
-                        vps.get('cancel_date', '') if vps.get('status') == "销毁" else '',
-                        vps.get('usage_period', ''),
-                        vps.get('price_per_month', 0),
-                        vps.get('total_price', 0)
-                    ]
-                    
-                    self.vps_tree.insert('', tk.END, text=vps.get('name'), values=values, tags=(f'nat_group_{group_index}',))
-                    
-                    # 设置字体颜色标签
-                    if vps.get('status') == "销毁":
-                        self.vps_tree.tag_configure(f'nat_group_{group_index}', foreground="red")
-                    else:
-                        self.vps_tree.tag_configure(f'nat_group_{group_index}', foreground="purple")
-            
-            # 添加非NAT VPS
-            for vps in non_nat_vps_list:
-                vps_names.append(vps.get('name'))
-                values = [
-                    vps.get('name', ''),
-                    vps.get('host', ''),
-                    vps.get('country', ''),
-                    '是' if vps.get('use_nat', False) else '否',
-                    vps.get('status', ''),
-                    vps.get('purchase_date', ''),
-                    vps.get('cancel_date', '') if vps.get('status') == "销毁" else '',
-                    vps.get('usage_period', ''),
-                    vps.get('price_per_month', 0),
-                    vps.get('total_price', 0)
-                ]
-                
-                # 设置标签以应用颜色
-                status_tag = "destroyed" if vps.get('status') == "销毁" else "non_nat"
-                self.vps_tree.insert('', tk.END, text=vps.get('name'), values=values, tags=(status_tag,))
-            
-            # 设置字体颜色
-            self.vps_tree.tag_configure("destroyed", foreground="red")
-            self.vps_tree.tag_configure("non_nat", foreground="blue")
-            
-            # 更新连接VPS下拉框
-            self.vps_combo['values'] = vps_names
-            if vps_names:
-                self.vps_combo.current(0)
-            
-            # 获取当前设置的账单年月
-            year, month = self.vps_manager.billing_manager.get_billing_period()
-            
-            # 更新账单树形视图，根据所选年月添加数据
-            # 获取指定年月的账单数据
-            df = self.vps_manager.billing_manager.to_dataframe(year, month)
-            
-            # 初始化费用统计变量
-            nat_vps_total_fee = 0.0
-            non_nat_vps_total_fee = 0.0
-            
-            for index, row in df.iterrows():
-                # 排除总计行和NAT费用行
-                if index < len(df) - 2 or (len(df) > 0 and "NAT总费用" not in str(row[-2]) and "总金额" not in str(row[-2])):
-                    # 获取VPS对象以确定NAT状态和其他信息
-                    vps_name = row[0]
-                    vps_obj = next((v for v in vps_data if v.get('name') == vps_name), None)
-                    
-                    use_nat = False
-                    status = ""
-                    purchase_date = ""
-                    if vps_obj:
-                        use_nat = vps_obj.get('use_nat', False)
-                        status = vps_obj.get('status', "")
-                        purchase_date = vps_obj.get('purchase_date', "")
-                    
-                    bill_values = list(row)
-                    # 在国家地区后添加是否使用NAT列
-                    bill_values.insert(2, '是' if use_nat else '否')
-                    # 在状态列后添加购买日期列
-                    bill_values.insert(4, purchase_date)
-                    
-                    # 累加费用统计
-                    try:
-                        price = float(row[-1])
-                        if use_nat:
-                            nat_vps_total_fee += price
-                        else:
-                            non_nat_vps_total_fee += price
-                    except (ValueError, TypeError):
-                        pass
-                    
-                    # 设置颜色标签
-                    if status == "销毁":
-                        tag = "bill_destroyed"
-                    elif use_nat:
-                        tag = "bill_nat"
-                    else:
-                        tag = "bill_non_nat"
-                    
-                    self.bill_tree.insert('', tk.END, text=vps_name, values=bill_values, tags=(tag,))
-            
-            # 设置账单表格中的字体颜色
-            self.bill_tree.tag_configure("bill_destroyed", foreground="red")
-            self.bill_tree.tag_configure("bill_nat", foreground="purple")
-            self.bill_tree.tag_configure("bill_non_nat", foreground="blue")
-            
-            # 计算NAT总费用 - 优先使用自定义值
-            nat_fee = 0
-            if has_nat_vps:
-                nat_fee = self.vps_manager.billing_manager.calculate_nat_fee()
-            
-            # 添加NAT总费用行（仅当有使用NAT的VPS时并且NAT费用大于0）
-            if has_nat_vps and nat_fee > 0:
-                nat_row = ['', '', '', '', '', '', '', 'NAT总费用', f"{nat_fee:.2f}"]
-                self.bill_tree.insert('', tk.END, text="", values=nat_row, tags=('summary',))
-            
-            # 计算总金额
-            total_bill = nat_vps_total_fee + non_nat_vps_total_fee
-            if has_nat_vps and nat_fee > 0:
-                total_bill += nat_fee
-            
-            # 添加总金额行
-            total_row = ['', '', '', '', '', '', '', '总金额', f"{total_bill:.2f}"]
-            self.bill_tree.insert('', tk.END, text="", values=total_row, tags=('summary',))
-            
-            # 设置总计行字体
-            self.bill_tree.tag_configure("summary", font=("Helvetica", 10, "bold"))
-            
-            # 更新UI中显示的费用
-            self.nat_vps_fee_var.set(f"${nat_vps_total_fee:.2f}")
-            self.non_nat_vps_fee_var.set(f"${non_nat_vps_total_fee:.2f}")
-            self.summary_nat_fee_var.set(f"${nat_fee:.2f}" if has_nat_vps and nat_fee > 0 else "$0.00")
-            self.summary_total_var.set(f"${total_bill:.2f}")
-            
-            # 更新NAT总费用显示
+            # 更新NAT总费用
+            nat_fee = self.vps_manager.billing_manager.calculate_nat_fee()
             self.nat_total_var.set(f"${nat_fee:.2f}")
             
-            # 更新NAT VPS数量信息
-            nat_vps_count = len(nat_vps_list)
+            # 更新NAT VPS使用信息
             nat_units = (nat_vps_count + 9) // 10  # 每10台VPS一个计费单位
+            nat_vps_count_info = f"使用NAT的VPS数量: {nat_vps_count}   NAT计费单位: {nat_units} (每10台一个单位)"
+            self.nat_vps_count_var.set(nat_vps_count_info)
             
-            self.nat_vps_count_var.set(f"使用NAT的VPS数量: {nat_vps_count}   NAT计费单位: {nat_units} (每10台一个单位)")
+            if hasattr(self, 'vps_list_nat_count_var'):
+                self.vps_list_nat_count_var.set(nat_vps_count_info)
+            if hasattr(self, 'vps_list_nat_total_var'):
+                self.vps_list_nat_total_var.set(f"${nat_fee:.2f}")
             
-            # 更新总费用显示
-            self.total_var.set(f"${total_bill:.2f}")
-            
-            # 设置状态栏消息
-            month_names = {
-                1: "一月", 2: "二月", 3: "三月", 4: "四月",
-                5: "五月", 6: "六月", 7: "七月", 8: "八月",
-                9: "九月", 10: "十月", 11: "十一月", 12: "十二月"
-            }
-            month_name = month_names.get(month, str(month) + "月")
-            
+            # 如果需要刷新账单信息，则重新计算总账单
             if refresh_billing:
-                self.status_var.set(f"已加载 {year}年{month_name} 的账单数据")
-            else:
-                self.status_var.set(f"已加载 {len(vps_data)} 台VPS数据")
-                
-            logger.info(f"总费用: ${nat_fee:.2f}, 总金额: ${total_bill:.2f}")
+                total_bill = self.vps_manager.billing_manager.calculate_total_bill()
+                self.total_var.set(f"${total_bill:.2f}")
+            
+            self.status_var.set("VPS数据加载完成")
+            
+            logger.info(f"已加载 {len(self.vps_manager.billing_manager.get_all_vps())} 台VPS数据")
             
         except Exception as e:
-            logger.error(f"加载VPS数据时发生错误: {str(e)}", exc_info=True)
+            logger.error(f"加载VPS数据失败: {str(e)}", exc_info=True)
             self.status_var.set("加载VPS数据失败")
+            messagebox.showerror("错误", f"加载VPS数据失败: {str(e)}")
     
     def show_add_vps_dialog(self):
         """显示添加VPS对话框"""
@@ -1738,7 +1584,7 @@ class VPSManagerGUI:
         logger.info("schedule_usage_update已被替换为start_usage_auto_refresh")
         pass
 
-    def update_vps_display_only(self):
+    def update_vps_display_only(self, need_real_time_calculation=False):
         """仅更新VPS显示，不重新计算使用时长"""
         try:
             # 获取VPS数据
@@ -1775,22 +1621,30 @@ class VPSManagerGUI:
             # 获取当前设置的账单年月
             year, month = self.vps_manager.billing_manager.get_billing_period()
             
-            # 控制是否需要实时计算使用时长
-            # 默认使用保存的值，仅在需要刷新使用时间时才实时计算
-            need_real_time_calculation = False
+            # 更新VPS下拉菜单
+            vps_names = []
             
             for group in nat_vps_groups:
                 group_index += 1
                 # 添加组内每个VPS
                 for i, vps in enumerate(group):
+                    vps_names.append(vps.get('name'))
                     # 获取使用时长（优先使用保存的值，除非需要实时计算）
                     if need_real_time_calculation:
                         try:
                             usage_result = self.vps_manager.billing_manager.calculate_usage_period(vps, year, month, now)
                             if isinstance(usage_result, tuple) and len(usage_result) == 4:
                                 usage_string, days, hours, minutes = usage_result
+                                vps['usage_period'] = usage_string
+                                
+                                # 计算价格
+                                price_per_month = vps.get('price_per_month', 0)
+                                if price_per_month:
+                                    vps['total_price'] = self.vps_manager.billing_manager.calculate_price(
+                                        price_per_month, days, hours, minutes)
                             else:
                                 usage_string = usage_result
+                                vps['usage_period'] = usage_string
                         except Exception as e:
                             usage_string = vps.get('usage_period', '计算错误')
                             logger.error(f"计算VPS {vps.get('name')} 使用时长时出错: {str(e)}")
@@ -1803,6 +1657,7 @@ class VPSManagerGUI:
                         vps.get('country', ''),
                         '是' if vps.get('use_nat', False) else '否',
                         vps.get('status', ''),
+                        vps.get('purchase_date', ''),
                         vps.get('cancel_date', '') if vps.get('status') == "销毁" else '',
                         usage_string,
                         vps.get('price_per_month', 0),
@@ -1825,14 +1680,23 @@ class VPSManagerGUI:
                 
             # 再添加非NAT的VPS
             for vps in non_nat_vps_list:
+                vps_names.append(vps.get('name'))
                 # 获取使用时长（优先使用保存的值，除非需要实时计算）
                 if need_real_time_calculation:
                     try:
                         usage_result = self.vps_manager.billing_manager.calculate_usage_period(vps, year, month, now)
                         if isinstance(usage_result, tuple) and len(usage_result) == 4:
                             usage_string, days, hours, minutes = usage_result
+                            vps['usage_period'] = usage_string
+                            
+                            # 计算价格
+                            price_per_month = vps.get('price_per_month', 0)
+                            if price_per_month:
+                                vps['total_price'] = self.vps_manager.billing_manager.calculate_price(
+                                    price_per_month, days, hours, minutes)
                         else:
                             usage_string = usage_result
+                            vps['usage_period'] = usage_string
                     except Exception as e:
                         usage_string = vps.get('usage_period', '计算错误')
                         logger.error(f"计算VPS {vps.get('name')} 使用时长时出错: {str(e)}")
@@ -1845,6 +1709,7 @@ class VPSManagerGUI:
                     vps.get('country', ''),
                     '是' if vps.get('use_nat', False) else '否',
                     vps.get('status', ''),
+                    vps.get('purchase_date', ''),
                     vps.get('cancel_date', '') if vps.get('status') == "销毁" else '',
                     usage_string,
                     vps.get('price_per_month', 0),
@@ -1862,6 +1727,11 @@ class VPSManagerGUI:
                 # 累加非NAT VPS费用
                 non_nat_vps_total_fee += float(vps.get('total_price', 0))
             
+            # 更新连接VPS下拉框
+            self.vps_combo['values'] = vps_names
+            if vps_names:
+                self.vps_combo.current(0)
+                
             # 获取当前设置的账单年月
             year, month = self.vps_manager.billing_manager.get_billing_period()
             
@@ -1881,17 +1751,37 @@ class VPSManagerGUI:
                     
                     use_nat = False
                     status = ""
+                    price_per_month = 0
                     if vps_obj:
                         use_nat = vps_obj.get('use_nat', False)
                         status = vps_obj.get('status', "")
+                        price_per_month = vps_obj.get('price_per_month', 0)
                     
                     bill_values = list(row)
                     # 在国家地区后添加是否使用NAT列
                     bill_values.insert(2, '是' if use_nat else '否')
                     
+                    # 确保单价与VPS对象中的单价一致
+                    if len(bill_values) >= 9:  # 确保有足够的元素
+                        bill_values[8] = price_per_month
+                        
+                    # 获取使用期限并按需要重新计算价格
+                    if vps_obj and len(bill_values) >= 10:
+                        # 如果可以获取用量和价格，确保总价正确
+                        try:
+                            total_price = vps_obj.get('total_price', 0)
+                            bill_values[9] = total_price
+                        except Exception as e:
+                            logger.error(f"更新VPS {vps_name} 账单总价时出错: {str(e)}")
+                    
                     # 累加费用统计
                     try:
-                        price = float(row[-1])
+                        # 使用重新计算后的价格进行统计
+                        if vps_obj:
+                            price = float(vps_obj.get('total_price', 0))
+                        else:
+                            price = float(row[-1])
+                            
                         if use_nat:
                             bill_nat_vps_fee += price
                         else:
@@ -1955,381 +1845,13 @@ class VPSManagerGUI:
             # 更新状态栏，显示最近更新时间
             self.status_var.set(f"数据已更新 - {now_str}")
             
+            # 如果进行了实时计算，保存更新后的数据
+            if need_real_time_calculation:
+                self.vps_manager.billing_manager.save_data()
+                logger.info("实时计算后的数据已保存")
+            
         except Exception as e:
             logger.error(f"更新VPS显示时发生错误: {str(e)}", exc_info=True)
-    
-    def refresh_usage(self):
-        """刷新使用时长，重新计算所有VPS的使用时长并更新显示"""
-        try:
-            # 获取当前设置的账单年月
-            year, month = self.vps_manager.billing_manager.get_billing_period()
-            month_names = {
-                1: "一月", 2: "二月", 3: "三月", 4: "四月",
-                5: "五月", 6: "六月", 7: "七月", 8: "八月",
-                9: "九月", 10: "十月", 11: "十一月", 12: "十二月"
-            }
-            month_name = month_names.get(month, str(month) + "月")
-            
-            # 显示进度信息
-            self.status_var.set(f"正在计算{year}年{month_name}使用时长...")
-            self.root.update_idletasks()  # 强制更新UI，让状态栏立即显示
-            
-            # 获取当前时间
-            now = datetime.datetime.now()
-            now_str = now.strftime("%Y/%m/%d %H:%M:%S")
-            
-            # 更新所有VPS的使用时长和价格
-            updated_count = 0
-            error_count = 0
-            total_vps = len(self.vps_manager.billing_manager.get_all_vps())
-            
-            for i, vps in enumerate(self.vps_manager.billing_manager.get_all_vps()):
-                # 更新状态以显示进度
-                progress = int((i + 1) / total_vps * 100)
-                self.status_var.set(f"正在计算({i+1}/{total_vps}) - {progress}% 完成")
-                self.root.update_idletasks()  # 强制更新UI
-                
-                try:
-                    # 使用当前时间计算使用时长
-                    usage_result = self.vps_manager.billing_manager.calculate_usage_period(vps, year, month, now)
-                    if isinstance(usage_result, tuple) and len(usage_result) == 4:
-                        usage_string, days, hours, minutes = usage_result
-                        vps['usage_period'] = usage_string
-                        
-                        # 计算价格
-                        price_per_month = vps.get('price_per_month', 0)
-                        if price_per_month:
-                            vps['total_price'] = self.vps_manager.billing_manager.calculate_price(
-                                price_per_month, days, hours, minutes)
-                        
-                        updated_count += 1
-                    else:
-                        # 处理错误情况
-                        vps['usage_period'] = usage_result
-                        vps['total_price'] = 0.0
-                        error_count += 1
-                except Exception as e:
-                    logger.error(f"计算VPS {vps.get('name')} 使用时长时出错: {str(e)}")
-                    error_count += 1
-            
-            # 保存数据
-            self.status_var.set("正在保存数据...")
-            self.root.update_idletasks()
-            self.vps_manager.billing_manager.save_data()
-            
-            # 刷新VPS列表显示
-            self.status_var.set("正在更新界面...")
-            self.root.update_idletasks()
-            self.load_vps_data()
-            
-            # 更新状态栏
-            status_message = f"{year}年{month_name}使用时长已更新 - {now_str} (成功: {updated_count}, 错误: {error_count})"
-            self.status_var.set(status_message)
-            logger.info(f"使用时长数据已更新: {status_message}")
-            
-            # 显示成功消息
-            messagebox.showinfo("刷新完成", f"已成功更新{updated_count}台VPS的使用时长\n更新时间: {now_str}")
-            
-        except Exception as e:
-            error_msg = f"刷新使用时长时出错: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            self.status_var.set("刷新使用时长失败")
-            messagebox.showerror("错误", error_msg)
-
-    def debug_usage_period(self):
-        """调试使用时长计算"""
-        try:
-            # 获取当前时间
-            now = datetime.datetime.now()
-            
-            # 获取当前设置的账单年月
-            year, month = self.vps_manager.billing_manager.get_billing_period()
-            
-            # 创建调试窗口
-            debug_window = tk.Toplevel(self.root)
-            debug_window.title("使用时长调试")
-            debug_window.geometry("800x600")
-            debug_window.transient(self.root)
-            debug_window.grab_set()
-            
-            # 创建文本框以显示调试信息
-            text_frame = ttk.LabelFrame(debug_window, text="使用时长计算详情")
-            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            debug_text = tk.Text(text_frame, wrap=tk.WORD)
-            debug_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            scroll = ttk.Scrollbar(text_frame, command=debug_text.yview)
-            scroll.pack(side=tk.RIGHT, fill=tk.Y)
-            debug_text.configure(yscrollcommand=scroll.set)
-            
-            # 向文本框添加信息
-            debug_text.insert(tk.END, f"当前时间: {now.strftime('%Y/%m/%d %H:%M:%S')}\n")
-            debug_text.insert(tk.END, f"账单年月: {year}年{month}月\n\n")
-            debug_text.insert(tk.END, "VPS使用时长计算详情:\n")
-            debug_text.insert(tk.END, "=" * 80 + "\n\n")
-            
-            # 为每个VPS计算并显示使用时长详情
-            for vps in self.vps_manager.billing_manager.get_all_vps():
-                # 获取VPS的基本信息
-                name = vps.get('name', '未知')
-                status = vps.get('status', '未知')
-                host = vps.get('host', '未知')
-                country = vps.get('country', '未知')
-                use_nat = '是' if vps.get('use_nat', False) else '否'
-                
-                # 获取日期信息
-                purchase_date = vps.get('purchase_date', '未设置')
-                start_date = vps.get('start_date', '未设置')
-                expire_date = vps.get('expire_date', '未设置') if status == "销毁" else "N/A"
-                
-                # 将这些信息加入到文本框
-                debug_text.insert(tk.END, f"名称: {name}\n")
-                debug_text.insert(tk.END, f"状态: {status}\n")
-                debug_text.insert(tk.END, f"IP地址: {host}\n")
-                debug_text.insert(tk.END, f"国家/地区: {country}\n")
-                debug_text.insert(tk.END, f"使用NAT: {use_nat}\n")
-                debug_text.insert(tk.END, f"购买日期: {purchase_date}\n")
-                debug_text.insert(tk.END, f"启用日期: {start_date}\n")
-                debug_text.insert(tk.END, f"销毁日期: {expire_date}\n")
-                
-                # 计算并显示使用时长，传递当前时间参数
-                usage_result = self.vps_manager.billing_manager.calculate_usage_period(vps, year, month, now)
-                
-                if isinstance(usage_result, tuple) and len(usage_result) == 4:
-                    usage_string, days, hours, minutes = usage_result
-                    debug_text.insert(tk.END, f"计算结果: {usage_string} ({days}天 {hours}小时 {minutes}分钟)\n")
-                    
-                    # 同时计算价格
-                    price_per_month = vps.get('price_per_month', 0)
-                    total_price = self.vps_manager.billing_manager.calculate_price(price_per_month, days, hours, minutes)
-                    debug_text.insert(tk.END, f"月单价: {price_per_month}\n")
-                    debug_text.insert(tk.END, f"计算总金额: {total_price}\n")
-                else:
-                    debug_text.insert(tk.END, f"计算结果: {usage_result} (计算出错)\n")
-                
-                debug_text.insert(tk.END, "\n" + "-" * 50 + "\n\n")
-            
-            # 设置只读模式
-            debug_text.configure(state=tk.DISABLED)
-            
-            # 添加按钮面板
-            button_frame = ttk.Frame(debug_window)
-            button_frame.pack(fill=tk.X, padx=10, pady=10)
-            
-            # 添加"刷新"按钮
-            def refresh_debug():
-                debug_window.destroy()
-                self.debug_usage_period()
-                
-            refresh_button = ttk.Button(button_frame, text="刷新", command=refresh_debug)
-            refresh_button.pack(side=tk.LEFT, padx=5)
-            
-            # 添加"应用"按钮
-            def apply_debug():
-                self.refresh_usage()
-                debug_window.destroy()
-                
-            apply_button = ttk.Button(button_frame, text="应用到所有VPS", command=apply_debug)
-            apply_button.pack(side=tk.LEFT, padx=5)
-            
-            # 添加"关闭"按钮
-            close_button = ttk.Button(button_frame, text="关闭", command=debug_window.destroy)
-            close_button.pack(side=tk.RIGHT, padx=5)
-            
-            self.status_var.set("使用时长调试完成")
-            
-        except Exception as e:
-            logger.error(f"调试使用时长时出错: {str(e)}", exc_info=True)
-            messagebox.showerror("错误", f"调试使用时长时出错: {str(e)}")
-            self.status_var.set("调试使用时长失败")
-
-    def edit_nat_fee(self):
-        """编辑NAT费用"""
-        # 创建编辑对话框
-        dialog = tk.Toplevel(self.root)
-        dialog.title("编辑NAT费用")
-        dialog.geometry("350x200")
-        dialog.resizable(False, False)
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # 创建表单
-        form_frame = ttk.Frame(dialog, padding=10)
-        form_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 显示当前NAT信息
-        nat_vps_count = sum(1 for vps in self.vps_manager.billing_manager.get_all_vps() if vps.get('use_nat', False))
-        nat_units = (nat_vps_count + 9) // 10  # 每10台VPS一个计费单位
-        
-        ttk.Label(form_frame, text=f"使用NAT的VPS数量: {nat_vps_count}", font=("Helvetica", 10)).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(form_frame, text=f"NAT计费单位: {nat_units} (每10台一个单位)", font=("Helvetica", 10)).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
-        
-        # 计算自动NAT费用
-        auto_nat_fee = 0
-        nat_vps_list = [vps for vps in self.vps_manager.billing_manager.get_all_vps() if vps.get('use_nat', True)]
-        if nat_vps_list:
-            # 获取第一个NAT VPS的价格作为基准价
-            base_price = float(nat_vps_list[0].get('price_per_month', 0))
-            auto_nat_fee = base_price * nat_units
-            
-        ttk.Label(form_frame, text=f"自动计算的NAT费用: ${auto_nat_fee:.2f}", font=("Helvetica", 10)).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
-        
-        # 显示当前NAT费用
-        current_nat_fee = self.vps_manager.billing_manager.nat_total_fee
-        ttk.Label(form_frame, text="当前NAT总费用:", font=("Helvetica", 10, "bold")).grid(row=3, column=0, sticky=tk.W, pady=5)
-        ttk.Label(form_frame, text=f"${current_nat_fee:.2f}", font=("Helvetica", 10, "bold")).grid(row=3, column=1, sticky=tk.W, pady=5)
-        
-        # 添加编辑字段
-        ttk.Label(form_frame, text="新NAT总费用:", font=("Helvetica", 10, "bold")).grid(row=4, column=0, sticky=tk.W, pady=5)
-        nat_fee_var = tk.StringVar(value=f"{current_nat_fee:.2f}")
-        ttk.Entry(form_frame, textvariable=nat_fee_var, width=15).grid(row=4, column=1, sticky=tk.W, pady=5)
-        
-        # 按钮框架
-        button_frame = ttk.Frame(form_frame)
-        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
-        
-        # 添加按钮
-        def on_save():
-            try:
-                # 验证输入
-                new_nat_fee = float(nat_fee_var.get().strip())
-                if new_nat_fee < 0:
-                    messagebox.showerror("错误", "NAT费用不能为负数")
-                    return
-                
-                # 更新NAT费用
-                # 由于NAT费用是在计算时动态生成的，我们需要修改billing_manager中的相关属性
-                self.vps_manager.billing_manager.nat_total_fee = new_nat_fee
-                
-                # 重新计算总账单
-                total = self.vps_manager.billing_manager.calculate_total_bill()
-                
-                # 保存到数据文件
-                # 添加nat_fee字段到数据中
-                with open(self.vps_manager.billing_manager.config_file, 'r', encoding='utf-8') as file:
-                    data = yaml.safe_load(file)
-                
-                data['nat_fee'] = new_nat_fee
-                
-                with open(self.vps_manager.billing_manager.config_file, 'w', encoding='utf-8') as file:
-                    yaml.dump(data, file, default_flow_style=False, allow_unicode=True)
-                
-                # 更新界面显示
-                self.nat_total_var.set(f"${new_nat_fee:.2f}")
-                self.vps_list_nat_total_var.set(f"${new_nat_fee:.2f}")
-                self.total_var.set(f"${total:.2f}")
-                
-                # 更新NAT使用情况信息 - 费用变化不影响使用数量
-                nat_vps_count = sum(1 for vps in self.vps_manager.billing_manager.get_all_vps() if vps.get('use_nat', False))
-                nat_units = (nat_vps_count + 9) // 10  # 每10台VPS一个计费单位
-                nat_count_info = f"使用NAT的VPS数量: {nat_vps_count}   NAT计费单位: {nat_units} (每10台一个单位)"
-                self.nat_vps_count_var.set(nat_count_info)
-                self.vps_list_nat_count_var.set(nat_count_info)
-                
-                # 更新VPS列表和账单列表
-                self.load_vps_data()
-                
-                messagebox.showinfo("成功", f"NAT总费用已更新为: ${new_nat_fee:.2f}")
-                dialog.destroy()
-                
-            except ValueError as e:
-                messagebox.showerror("错误", f"输入格式错误: {str(e)}")
-            except Exception as e:
-                messagebox.showerror("错误", f"更新NAT费用时出错: {str(e)}")
-                
-        ttk.Button(button_frame, text="保存", command=on_save).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="使用自动计算值", command=lambda: nat_fee_var.set(f"{auto_nat_fee:.2f}")).pack(side=tk.LEFT, padx=5)
-
-    def update_billing_nat_ui_visibility(self, has_nat_vps=False):
-        """根据是否有使用NAT的VPS来更新账单界面元素显示状态"""
-        if has_nat_vps:
-            # 显示NAT相关UI组件
-            self.billing_nat_info_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-            self.billing_nat_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-            self.billing_nat_fee_button.pack(side=tk.LEFT, padx=5)
-            self.billing_nat_set_button.pack(side=tk.RIGHT, padx=5)
-            
-            # 显示统计表格中NAT相关行
-            try:
-                # 确保统计表格中的NAT相关行可见
-                if hasattr(self, 'nat_vps_fee_var') and hasattr(self, 'summary_nat_fee_var'):
-                    # 这里不需要特别的显示代码，因为grid不像pack那样有forget方法
-                    # 如果需要，可以使用grid_remove()和grid()来控制可见性
-                    pass
-            except Exception as e:
-                logger.error(f"显示NAT相关统计行时发生错误: {str(e)}")
-        else:
-            # 隐藏NAT相关UI组件
-            self.billing_nat_info_frame.pack_forget()
-            self.billing_nat_frame.pack_forget()
-            self.billing_nat_fee_button.pack_forget()
-            self.billing_nat_set_button.pack_forget()
-            
-            # 隐藏统计表格中NAT相关行，但保留总计行
-            try:
-                # 如果NAT服务器费用为0，将其设置为"不适用"
-                if hasattr(self, 'nat_vps_fee_var'):
-                    self.nat_vps_fee_var.set("不适用")
-                if hasattr(self, 'summary_nat_fee_var'):
-                    self.summary_nat_fee_var.set("$0.00")
-            except Exception as e:
-                logger.error(f"隐藏NAT相关统计行时发生错误: {str(e)}")
-
-    def on_tab_changed(self, event):
-        """处理选项卡切换事件"""
-        try:
-            # 获取当前选中的选项卡
-            selected_tab = self.notebook.index(self.notebook.select())
-            
-            # 根据选中的选项卡执行不同操作
-            if selected_tab == 0:  # VPS列表选项卡
-                # 加载VPS数据
-                self.load_vps_data()
-            elif selected_tab == 1:  # 连接管理选项卡
-                # 刷新连接状态
-                self.refresh_connection_status()
-            elif selected_tab == 2:  # 账单管理选项卡
-                # 刷新账单数据
-                self.load_vps_data(refresh_billing=True)
-            elif selected_tab == 3:  # 命令执行选项卡
-                # 更新命令历史
-                self.update_command_history()
-                
-        except Exception as e:
-            logger.error(f"选项卡切换时发生错误: {str(e)}", exc_info=True)
-
-    def delayed_wireguard_refresh(self, vps_name=None):
-        """延迟刷新WireGuard状态，确保连接完全就绪"""
-        logger.info(f"执行延迟的WireGuard刷新，VPS: {vps_name if vps_name else 'all'}")
-        
-        # 如果当前在WireGuard标签页，直接刷新
-        current_tab = self.notebook.index(self.notebook.select())
-        tab_name = self.notebook.tab(current_tab, "text")
-        
-        if tab_name == "WireGuard":
-            logger.info("当前在WireGuard标签页，直接刷新")
-            self.refresh_wireguard_status()
-        else:
-            # 如果不在WireGuard标签页，记录需要刷新的状态，稍后切换时刷新
-            logger.info("当前不在WireGuard标签页，标记为需要刷新")
-            if not hasattr(self, 'wireguard_needs_refresh'):
-                self.wireguard_needs_refresh = True
-                
-            # 如果指定了VPS，记录该VPS需要在标签切换时被选中
-            if vps_name:
-                if not hasattr(self, 'wireguard_select_vps'):
-                    self.wireguard_select_vps = set()
-                self.wireguard_select_vps.add(vps_name)
-
-    def generate_new_wireguard_config(self):
-        """生成新的WireGuard配置"""
-        messagebox.showinfo("提示", "此功能尚未实现")
-        
-    def save_displayed_config(self):
-        """保存显示的配置文件"""
-        messagebox.showinfo("提示", "此功能尚未实现")
 
     def init_billing_tab(self):
         """初始化账单管理选项卡"""
@@ -2519,263 +2041,6 @@ class VPSManagerGUI:
         self.total_var = tk.StringVar()
         self.total_var.set("$0.00")
         ttk.Label(bill_frame, textvariable=self.total_var, font=("Helvetica", 12, "bold")).pack(side=tk.LEFT, pady=5)
-    
-    def install_wireguard_all(self):
-        """在所有VPS上安装WireGuard - 已简化"""
-        messagebox.showinfo("功能已简化", "WireGuard安装功能已简化，请使用命令行工具")
-        
-    def one_click_deploy_wireguard(self):
-        """一键部署WireGuard功能"""
-        # 检查是否有选中的VPS
-        selected_items = self.vps_tree.selection()
-        if not selected_items:
-            messagebox.showinfo("提示", "请先选择要部署WireGuard的VPS")
-            return
-            
-        selected_vps = []
-        for item in selected_items:
-            vps_name = self.vps_tree.item(item, "values")[0]  # 假设第一列是VPS名称
-            selected_vps.append(vps_name)
-            
-        if not selected_vps:
-            messagebox.showinfo("提示", "未找到有效的VPS")
-            return
-                
-        # 如果选中了多个VPS，确认是否同时部署
-        if len(selected_vps) > 1:
-            if not messagebox.askyesno("确认", f"是否同时在{len(selected_vps)}台VPS上部署WireGuard？"):
-                return
-                
-        self.status_var.set(f"正在部署WireGuard...")
-        
-        # 创建进度窗口
-        progress_window = tk.Toplevel(self.root)
-        progress_window.title("WireGuard部署进度")
-        progress_window.geometry("800x600")
-        
-        # 创建进度文本框
-        progress_text = tk.Text(progress_window, wrap=tk.WORD)
-        progress_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 添加滚动条
-        scrollbar = ttk.Scrollbar(progress_text, orient=tk.VERTICAL, command=progress_text.yview)
-        progress_text.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 创建配置显示框架
-        config_frame = ttk.LabelFrame(progress_window, text="WireGuard配置和二维码")
-        config_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 配置显示区域
-        config_text = tk.Text(config_frame, wrap=tk.WORD, height=10)
-        config_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 二维码显示区域
-        qr_frame = ttk.Frame(config_frame)
-        qr_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 保存配置按钮
-        save_button = ttk.Button(progress_window, text="保存配置", state=tk.DISABLED,
-                                 command=lambda: self.save_wireguard_config(config_text.get("1.0", tk.END)))
-        save_button.pack(side=tk.RIGHT, padx=10, pady=10)
-        
-        # 关闭按钮
-        close_button = ttk.Button(progress_window, text="关闭", command=progress_window.destroy)
-        close_button.pack(side=tk.RIGHT, padx=10, pady=10)
-        
-        # WireGuard脚本内容
-        wireguard_script = """#!/bin/bash
-# VPS配置WG.sh
-# 本脚本适用于 Ubuntu 22.04，自动安装配置 WireGuard，
-# 根据 VPS 外部接口上的公网 IP（主IP及附加IP）分别创建对应的 WG 实例，
-# 为每个实例配置 SNAT 出网、双向 FORWARD，以及逐条添加 1000 个端口映射 DNAT 规则，
-# 同时生成服务端及客户端配置（含二维码）。
-#
-# 请以 root 用户运行（例如：sudo bash VPS配置WG.sh）
-# 在使用前建议在测试环境中验证！
-set -e
-
-# 自动确认相关安装和配置
-export DEBIAN_FRONTEND=noninteractive
-echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
-echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
-
-# 设置DNS（可根据需要修改）
-DNS="1.1.1.1"
-
-echo "更新并升级系统软件包..."
-apt update && apt upgrade -y
-
-echo "安装 WireGuard、qrencode、ufw、iptables-persistent 和 curl..."
-apt install -y wireguard qrencode ufw iptables-persistent curl
-
-echo "开启 IP 转发..."
-sysctl -w net.ipv4.ip_forward=1 >/dev/null
-if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
-  echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-fi
-
-# 修改 UFW 默认转发策略为 ACCEPT
-if [ -f /etc/default/ufw ]; then
-  sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
-fi
-
-# 自动获取默认外部网络接口
-EXT_IF=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
-echo "检测到外部网络接口：$EXT_IF"
-
-# 获取该接口上所有IPv4地址（按系统分配顺序）
-public_ips=($(ip -o -4 addr show dev "$EXT_IF" | awk '{print $4}' | cut -d/ -f1))
-if [ ${#public_ips[@]} -eq 0 ]; then
-  echo "未检测到公共IP，退出！"
-  exit 1
-fi
-
-# 获取实际对外显示的主IP
-primary_ip=$(curl -s ifconfig.me)
-echo "通过外部检测到的主IP：$primary_ip"
-
-# 调整顺序：将主IP放在首位，其它附加IP依次排列
-ordered_ips=()
-for ip in "${public_ips[@]}"; do
-  if [ "$ip" == "$primary_ip" ]; then
-    ordered_ips=("$ip")
-    break
-  fi
-done
-for ip in "${public_ips[@]}"; do
-  if [ "$ip" != "$primary_ip" ]; then
-    ordered_ips+=("$ip")
-  fi
-done
-public_ips=("${ordered_ips[@]}")
-echo "最终IP顺序：${public_ips[@]}"
-
-# 创建保存配置文件的目录，例如 /root/VPS配置WG
-WG_DIR="/root/VPS配置WG"
-mkdir -p "$WG_DIR"
-
-instance=0
-for ip in "${public_ips[@]}"; do
-  # 检查对应的 WireGuard 配置是否已存在，若存在则跳过
-  if [ -f "/etc/wireguard/wg${instance}.conf" ]; then
-    echo "检测到 /etc/wireguard/wg${instance}.conf 已存在，跳过 IP: $ip"
-    instance=$((instance+1))
-    continue
-  fi
-
-  WG_IF="wg${instance}"
-  WG_PORT=$((52835 + instance * 10))
-  # 修改端口映射范围：每个实例映射1000个端口，且不重叠
-  MAP_PORT_START=$((55835 + instance * 1000))
-  MAP_PORT_END=$((MAP_PORT_START + 999))
-  # 每个实例使用不同子网：wg0 -> 10.0.1.0/24，wg1 -> 10.0.2.0/24，以此类推
-  WG_SUBNET="10.0.$((instance+1)).0/24"
-  SERVER_WG_IP="10.0.$((instance+1)).1"
-
-  echo "-------------------------------------------"
-  echo "配置 WireGuard 接口：${WG_IF} (公网 IP: ${ip})"
-  echo "ListenPort: ${WG_PORT}"
-  echo "端口映射范围: ${MAP_PORT_START}-${MAP_PORT_END} UDP 映射至 ${WG_PORT}"
-  echo "子网: ${WG_SUBNET} (服务端 IP: ${SERVER_WG_IP})"
-  
-  # 生成服务端密钥对
-  echo "为 ${WG_IF} 生成服务端密钥..."
-  umask 077
-  wg genkey | tee "$WG_DIR/${WG_IF}-server.key" | wg pubkey > "$WG_DIR/${WG_IF}-server.pub"
-
-  # 自动为每个实例配置 1 个 peer，无需人工输入
-  peer_count=1
-  
-  # 保存服务端配置中的各 peer 配置段
-  peer_configs=""
-
-  # 子网内IP分配，服务端占用 .1，从 .2 开始分配给客户端
-  peer_ip_index=2  
-  for ((p=1; p<=peer_count; p++)); do
-    echo "为 ${WG_IF} 的 peer $p 生成密钥..."
-    wg genkey | tee "$WG_DIR/${WG_IF}-peer${p}.key" | wg pubkey > "$WG_DIR/${WG_IF}-peer${p}.pub"
-    # 分配 peer IP
-    PEER_IP="10.0.$((instance+1)).$peer_ip_index"
-    peer_ip_index=$((peer_ip_index+1))
-
-    peer_configs+="
-[Peer]
-PublicKey = $(cat "$WG_DIR/${WG_IF}-peer${p}.pub")
-AllowedIPs = ${PEER_IP}/32
-"
-
-    # 生成客户端配置文件，客户端 Address 掩码设为 /32
-    CLIENT_CONF="$WG_DIR/${WG_IF}-peer${p}-client.conf"
-    cat > "$CLIENT_CONF" <<EOF
-[Interface]
-PrivateKey = $(cat "$WG_DIR/${WG_IF}-peer${p}.key")
-Address = ${PEER_IP}/32
-DNS = ${DNS}
-[Peer]
-PublicKey = $(cat "$WG_DIR/${WG_IF}-server.pub")
-Endpoint = ${ip}:${WG_PORT}
-AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25
-EOF
-  done
-
-  # 生成服务端配置文件，使用 SNAT 指定出网 IP，并添加双向 FORWARD 规则及1000个端口映射规则
-  SERVER_CONF="/etc/wireguard/${WG_IF}.conf"
-  SERVER_PRIVATE_KEY=$(cat "$WG_DIR/${WG_IF}-server.key")
-  
-  cat > "$SERVER_CONF" <<EOF
-[Interface]
-Address = ${SERVER_WG_IP}/24
-ListenPort = ${WG_PORT}
-PrivateKey = ${SERVER_PRIVATE_KEY}
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; \\
-         iptables -t nat -A POSTROUTING -s ${WG_SUBNET} -o ${EXT_IF} -j SNAT --to-source ${ip}; \\
-         for port in \$(seq ${MAP_PORT_START} ${MAP_PORT_END}); do iptables -t nat -A PREROUTING -p udp --dport \$port -j DNAT --to-destination ${ip}:${WG_PORT}; done
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; \\
-           iptables -t nat -D POSTROUTING -s ${WG_SUBNET} -o ${EXT_IF} -j SNAT --to-source ${ip}; \\
-           for port in \$(seq ${MAP_PORT_START} ${MAP_PORT_END}); do iptables -t nat -D PREROUTING -p udp --dport \$port -j DNAT --to-destination ${ip}:${WG_PORT}; done
-EOF
-
-  echo "${peer_configs}" >> "$SERVER_CONF"
-  chmod 600 "$SERVER_CONF" "$WG_DIR/${WG_IF}-server.key"
-
-  # 设置 systemd 开机自启并启动 WireGuard 接口
-  systemctl enable wg-quick@${WG_IF}
-  systemctl restart wg-quick@${WG_IF}
-
-  # 配置 ufw 防火墙规则
-  echo "配置 ufw 防火墙规则..."
-  ufw allow 22/tcp
-  ufw allow ${WG_PORT}/udp
-  ufw allow ${MAP_PORT_START}:${MAP_PORT_END}/udp
-
-  echo "-------------------------------------------"
-  echo "WireGuard 接口：${WG_IF}"
-  echo "公网 IP: ${ip}"
-  echo "服务端 WireGuard IP: ${SERVER_WG_IP}"
-  echo "监听端口: ${WG_PORT}"
-  echo "1000个端口映射范围: ${MAP_PORT_START}-${MAP_PORT_END} UDP 映射至 ${WG_PORT}"
-  echo "服务端配置文件: ${SERVER_CONF}"
-  
-  echo "---------- 以下为每个 peer 的客户端配置 ----------"
-  for ((p=1; p<=peer_count; p++)); do
-      CLIENT_CONF="$WG_DIR/${WG_IF}-peer${p}-client.conf"
-      echo ">>> Peer $p 客户端配置文件: ${CLIENT_CONF}"
-      echo "配置内容："
-      cat "$CLIENT_CONF"
-      echo "二维码（使用 qrencode 显示）："
-      qrencode -t ansiutf8 < "$CLIENT_CONF"
-      echo "-------------------------------------------"
-  done
-
-  instance=$((instance+1))
-done
-
-ufw --force enable
-ufw reload
-
-cp "$0" "$WG_DIR/VPS配置WG.sh"
 
 echo "所有配置已完成，WireGuard 服务已重启并设置为开机自启动。"
 echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 ${WG_DIR} 目录下的客户端配置和二维码."
@@ -3575,146 +2840,3 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 ${WG_DIR} �
         
         # 设置焦点
         dialog.focus_set()
-
-    def create_menu(self):
-        """创建菜单栏"""
-        try:
-            # 创建菜单栏
-            menu_bar = tk.Menu(self.root)
-            
-            # 文件菜单
-            file_menu = tk.Menu(menu_bar, tearoff=0)
-            file_menu.add_command(label="刷新使用时长", command=self.refresh_usage)
-            file_menu.add_command(label="调试使用时长", command=self.debug_usage_period)
-            file_menu.add_separator()
-            file_menu.add_command(label="退出", command=self.on_closing)
-            menu_bar.add_cascade(label="文件", menu=file_menu)
-            
-            # 帮助菜单
-            help_menu = tk.Menu(menu_bar, tearoff=0)
-            help_menu.add_command(label="关于", command=self.show_about_dialog)
-            menu_bar.add_cascade(label="帮助", menu=help_menu)
-            
-            # 设置菜单栏
-            self.root.config(menu=menu_bar)
-            
-            logger.info("菜单栏创建成功")
-        except Exception as e:
-            logger.error(f"创建菜单栏时出错: {str(e)}")
-            # 不要因为菜单创建失败而中断程序运行
-
-def test_basic_gui():
-    """一个简单的测试函数，用于测试基本的GUI功能"""
-    try:
-        print("开始测试基本GUI功能...")
-        # 创建根窗口
-        root = tk.Tk()
-        root.title("VPS管理器测试窗口")
-        root.geometry("400x300")
-        
-        # 添加一个标签
-        label = tk.Label(root, text="测试窗口 - 如果你看到这个窗口，说明基本GUI功能正常")
-        label.pack(pady=20)
-        
-        # 添加一个按钮
-        def on_button_click():
-            print("按钮被点击")
-            messagebox.showinfo("测试", "按钮功能正常")
-        
-        button = tk.Button(root, text="测试按钮", command=on_button_click)
-        button.pack(pady=10)
-        
-        # 添加关闭按钮
-        close_button = tk.Button(root, text="关闭", command=root.destroy)
-        close_button.pack(pady=10)
-        
-        print("GUI测试窗口已创建，等待用户交互...")
-        root.mainloop()
-        print("GUI测试完成")
-        return True
-    except Exception as e:
-        print(f"GUI测试失败: {str(e)}")
-        return False
-
-def main():
-    """主函数，启动VPS管理器"""
-    try:
-        # 设置日志
-        log_file = "vps_manager_gui.log"
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
-        
-        # 创建根窗口
-        root = tk.Tk()
-        
-        # 设置图标
-        try:
-            # 检查是否存在图标文件
-            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
-            if os.path.exists(icon_path):
-                root.iconbitmap(icon_path)
-        except Exception as e:
-            logger.warning(f"无法设置图标: {str(e)}")
-        
-        # 创建VPS管理器GUI
-        app = VPSManagerGUI(root)
-        
-        # 启动主循环
-        root.mainloop()
-        
-    except Exception as e:
-        # 全局异常处理，防止程序闪退
-        error_message = f"发生严重错误: {str(e)}"
-        print(error_message)
-        
-        # 记录到日志文件
-        try:
-            logger.critical(error_message, exc_info=True)
-            print(f"错误详情已记录到日志文件: {log_file}")
-        except:
-            print("无法记录到日志文件")
-        
-        # 显示错误对话框
-        try:
-            from tkinter import messagebox
-            messagebox.showerror("严重错误", error_message + "\n\n请查看日志文件了解详情。")
-        except:
-            print("无法显示错误对话框")
-        
-        # 保持控制台窗口开启
-        input("按Enter键退出...")
-        return 1  # 返回错误码
-    
-    return 0  # 正常退出
-
-# 程序入口
-if __name__ == "__main__":
-    # 隐藏命令行窗口
-    import ctypes
-    import sys
-    
-    # 检查是否在Windows系统上运行
-    if sys.platform == "win32":
-        try:
-            # 获取控制台窗口句柄
-            kernel32 = ctypes.WinDLL('kernel32')
-            user32 = ctypes.WinDLL('user32')
-            
-            # 获取当前控制台窗口
-            hwnd = kernel32.GetConsoleWindow()
-            
-            # 如果存在控制台窗口，则隐藏它
-            if hwnd != 0:
-                user32.ShowWindow(hwnd, 0)  # 0表示隐藏窗口
-                # 日志仍会写入到文件，但不会显示在控制台
-        except Exception as e:
-            print(f"无法隐藏控制台窗口: {str(e)}")
-    
-    exit_code = main()
-    sys.exit(exit_code)

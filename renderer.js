@@ -22,6 +22,10 @@ createApp({
         privateKeyPath: '',
         passphrase: ''
       },
+      // 批量添加服务器相关变量
+      useBatchMode: false,
+      batchServers: [],
+      batchResults: [],
       selectedServer: null,
       isDeploying: false,
       isTestingConnection: false,
@@ -71,7 +75,9 @@ createApp({
         price_per_month: 20,
         start_date: '',
         total_price: 0,
-        usage_period: ''
+        usage_period: '',
+        ip_address: '',
+        country: ''
       },
       editingVpsIndex: -1,
       // 修复未定义的属性
@@ -92,7 +98,9 @@ createApp({
       // 批量添加VPS相关数据
       showBatchAddVpsModal: false,
       batchVpsData: '',
-      batchVpsList: []
+      batchVpsList: [],
+      // IP地址检测相关变量
+      isDetectingIp: false
     };
   },
   
@@ -254,6 +262,15 @@ createApp({
     async connectServer(server) {
       try {
         this.showSSHTerminalModal = true;
+        // 清空上一个连接的配置相关数据
+        this.clientConfigs = [];
+        this.foundConfigFiles = [];
+        this.currentConfigIndex = -1;
+        this.configContent = '';
+        this.qrCodeImage = null;
+        this.showConfigContent = false;
+        this.wireguardResult = null;
+        
         this.currentConnectedServer = server;
         this.sshOutput = `正在连接到 ${server.name} (${server.host})...\n`;
         
@@ -391,6 +408,14 @@ createApp({
       this.currentConnectedServer = null;
       this.sshOutput = '';
       this.sshCommand = '';
+      // 清空配置相关数据
+      this.clientConfigs = [];
+      this.foundConfigFiles = [];
+      this.currentConfigIndex = -1;
+      this.configContent = '';
+      this.qrCodeImage = null;
+      this.showConfigContent = false;
+      this.wireguardResult = null;
     },
     
     // 一键执行Wireguard安装脚本
@@ -972,7 +997,9 @@ createApp({
         price_per_month: 20,
         start_date: this.formatDate(new Date()),
         total_price: 0,
-        usage_period: ''
+        usage_period: '',
+        ip_address: '',
+        country: ''
       };
       
       // 重置编辑索引为-1，表示添加新VPS
@@ -1172,7 +1199,9 @@ createApp({
         use_nat: false,
         status: '在用',
         cancel_date: '',
-        price_per_month: 20
+        price_per_month: 20,
+        ip_address: '',
+        country: ''
       };
     },
     
@@ -1191,9 +1220,17 @@ createApp({
     },
     
     // 清空表格
-    clearBatchRows() {
+    clearBatchServers() {
       if (confirm('确定要清空表格吗？')) {
-        this.batchVpsList = [this.createEmptyBatchRow()];
+        this.batchServers = [{
+          name: '',
+          host: '',
+          port: 22,
+          username: 'root',
+          authType: 'password',
+          password: '',
+          privateKeyPath: ''
+        }];
       }
     },
     
@@ -1245,7 +1282,9 @@ createApp({
             start_date: item.purchase_date.replace(/-/g, '/'),     // 设置start_date与purchase_date相同
             use_nat: item.use_nat,
             status: item.status,
-            price_per_month: parseFloat(item.price_per_month)
+            price_per_month: parseFloat(item.price_per_month),
+            ip_address: item.ip_address || '',
+            country: item.country || ''
           };
           
           // 如果状态为销毁且有销毁时间，添加cancel_date
@@ -1389,6 +1428,10 @@ createApp({
         this.wireguardInstances = [];
         this.wireguardInstanceDetails = null;
         this.wireguardSelectedInstance = '';
+        // 清除所有相关状态，确保切换VPS后不会显示前一个VPS的配置
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
         
         const result = await window.electronAPI.getWireguardInstances(this.wireguardSelectedServer);
         console.log('Wireguard实例列表:', result);
@@ -1419,6 +1462,10 @@ createApp({
       try {
         this.wireguardLoading = true;
         this.wireguardInstanceDetails = null;
+        // 清除所有相关状态，确保切换实例后不会显示前一个实例的配置
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
         
         const result = await window.electronAPI.getWireguardInstanceDetails(
           this.wireguardSelectedServer, 
@@ -1621,6 +1668,488 @@ createApp({
       };
       
       reader.readAsText(file);
+    },
+    
+    // 批量添加服务器相关方法
+    addBatchServerRow() {
+      this.batchServers.push({
+        name: '',
+        host: '',
+        port: 22,
+        username: 'root',
+        authType: 'password',
+        password: '',
+        privateKeyPath: ''
+      });
+    },
+    
+    removeBatchServer(index) {
+      if (this.batchServers.length > 1) {
+        this.batchServers.splice(index, 1);
+      } else {
+        alert('至少保留一行数据');
+      }
+    },
+    
+    async saveBatchServers() {
+      try {
+        if (!window.electronAPI) {
+          throw new Error('electronAPI未定义');
+        }
+        
+        // 验证输入
+        if (this.batchServers.length === 0) {
+          alert('请至少添加一条服务器数据');
+          return;
+        }
+        
+        // 验证每一行数据
+        const validatedList = [];
+        let hasErrors = false;
+        
+        for (let i = 0; i < this.batchServers.length; i++) {
+          const server = this.batchServers[i];
+          
+          // 检查必填字段
+          if (!server.name) {
+            alert(`第 ${i+1} 行的服务器名称不能为空`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (!server.host) {
+            alert(`第 ${i+1} 行的主机地址不能为空`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (!server.username) {
+            alert(`第 ${i+1} 行的用户名不能为空`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (server.authType === 'password' && !server.password) {
+            alert(`第 ${i+1} 行选择了密码认证，但未填写密码`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (server.authType === 'privateKey' && !server.privateKeyPath) {
+            alert(`第 ${i+1} 行选择了私钥认证，但未填写私钥路径`);
+            hasErrors = true;
+            break;
+          }
+          
+          // 创建服务器对象
+          const serverData = {
+            id: generateId(),
+            name: server.name,
+            host: server.host,
+            port: parseInt(server.port) || 22,
+            username: server.username
+          };
+          
+          if (server.authType === 'password') {
+            serverData.password = server.password;
+          } else {
+            serverData.privateKeyPath = server.privateKeyPath;
+          }
+          
+          validatedList.push(serverData);
+        }
+        
+        if (hasErrors) {
+          return;
+        }
+        
+        // 保存所有服务器
+        this.batchResults = [];
+        
+        for (const serverData of validatedList) {
+          try {
+            const result = await window.electronAPI.saveServer(serverData);
+            
+            if (result.success) {
+              this.servers.push(serverData);
+              this.batchResults.push({
+                name: serverData.name,
+                success: true,
+                message: '添加成功'
+              });
+            } else {
+              this.batchResults.push({
+                name: serverData.name,
+                success: false,
+                message: `添加失败: ${result.error || '未知错误'}`
+              });
+            }
+          } catch (error) {
+            this.batchResults.push({
+              name: serverData.name,
+              success: false,
+              message: `添加失败: ${error.message || '未知错误'}`
+            });
+          }
+        }
+        
+        // 如果全部成功，清空表格
+        const allSuccess = this.batchResults.every(result => result.success);
+        if (allSuccess) {
+          this.batchServers = [];
+        }
+      } catch (error) {
+        console.error('批量保存服务器失败:', error);
+        alert('批量保存服务器失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    async testBatchConnections() {
+      // 验证输入
+      if (this.batchServers.length === 0) {
+        alert('请至少添加一条服务器数据');
+        return;
+      }
+      
+      // 验证每一行数据
+      for (let i = 0; i < this.batchServers.length; i++) {
+        const server = this.batchServers[i];
+        
+        // 检查必填字段
+        if (!server.name || !server.host || !server.username || 
+            (server.authType === 'password' && !server.password) ||
+            (server.authType === 'privateKey' && !server.privateKeyPath)) {
+          alert(`第 ${i+1} 行数据不完整，请检查`);
+          return;
+        }
+      }
+      
+      // 测试连接
+      this.batchResults = [];
+      
+      for (const server of this.batchServers) {
+        // 创建临时服务器对象
+        const tempServer = {
+          id: generateId(),
+          name: server.name,
+          host: server.host,
+          port: parseInt(server.port) || 22,
+          username: server.username
+        };
+        
+        if (server.authType === 'password') {
+          tempServer.password = server.password;
+        } else {
+          tempServer.privateKeyPath = server.privateKeyPath;
+        }
+        
+        try {
+          // 保存临时服务器
+          const saveResult = await window.electronAPI.saveServer(tempServer);
+          
+          if (!saveResult.success) {
+            this.batchResults.push({
+              name: server.name,
+              success: false,
+              message: `保存服务器失败: ${saveResult.error || '未知错误'}`
+            });
+            continue;
+          }
+          
+          // 测试连接
+          const testResult = await window.electronAPI.testSSHConnection(tempServer.id);
+          
+          if (testResult.success) {
+            this.batchResults.push({
+              name: server.name,
+              success: true,
+              message: '连接成功'
+            });
+          } else {
+            this.batchResults.push({
+              name: server.name,
+              success: false,
+              message: `连接失败: ${testResult.error || '未知错误'}`
+            });
+          }
+          
+          // 删除临时服务器
+          await window.electronAPI.deleteServer(tempServer.id);
+        } catch (error) {
+          this.batchResults.push({
+            name: server.name,
+            success: false,
+            message: `测试失败: ${error.message || '未知错误'}`
+          });
+        }
+      }
+    },
+    
+    async batchDeploy() {
+      try {
+        if (!window.electronAPI) {
+          throw new Error('electronAPI未定义');
+        }
+        
+        // 验证输入
+        if (this.batchServers.length === 0) {
+          alert('请至少添加一条服务器数据');
+          return;
+        }
+        
+        if (!confirm(`确定要对 ${this.batchServers.length} 台服务器批量部署Wireguard吗？`)) {
+          return;
+        }
+        
+        // 验证每一行数据并部署
+        this.batchResults = [];
+        
+        for (const server of this.batchServers) {
+          // 检查必填字段
+          if (!server.name || !server.host || !server.username || 
+              (server.authType === 'password' && !server.password) ||
+              (server.authType === 'privateKey' && !server.privateKeyPath)) {
+            this.batchResults.push({
+              name: server.name || '未命名服务器',
+              success: false,
+              message: '服务器数据不完整，请检查'
+            });
+            continue;
+          }
+          
+          // 创建临时服务器对象
+          const tempServer = {
+            id: generateId(),
+            name: server.name,
+            host: server.host,
+            port: parseInt(server.port) || 22,
+            username: server.username
+          };
+          
+          if (server.authType === 'password') {
+            tempServer.password = server.password;
+          } else {
+            tempServer.privateKeyPath = server.privateKeyPath;
+          }
+          
+          try {
+            // 保存临时服务器
+            const saveResult = await window.electronAPI.saveServer(tempServer);
+            
+            if (!saveResult.success) {
+              this.batchResults.push({
+                name: server.name,
+                success: false,
+                message: `保存服务器失败: ${saveResult.error || '未知错误'}`
+              });
+              continue;
+            }
+            
+            // 部署Wireguard
+            const deployResult = await window.electronAPI.deployWireguard(tempServer.id);
+            
+            if (deployResult.success) {
+              this.batchResults.push({
+                name: server.name,
+                success: true,
+                message: 'Wireguard部署成功'
+              });
+              
+              // 添加服务器到列表（永久保存）
+              this.servers.push(tempServer);
+            } else {
+              // 删除临时服务器
+              await window.electronAPI.deleteServer(tempServer.id);
+              
+              this.batchResults.push({
+                name: server.name,
+                success: false,
+                message: `Wireguard部署失败: ${deployResult.error || '未知错误'}`
+              });
+            }
+          } catch (error) {
+            this.batchResults.push({
+              name: server.name,
+              success: false,
+              message: `操作失败: ${error.message || '未知错误'}`
+            });
+          }
+        }
+        
+        // 如果全部成功，清空表格
+        const allSuccess = this.batchResults.every(result => result.success);
+        if (allSuccess) {
+          this.batchServers = [];
+        }
+      } catch (error) {
+        console.error('批量部署失败:', error);
+        alert('批量部署失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 打开添加服务器对话框
+    openAddServerModal() {
+      // 重置表单
+      this.newServer = {
+        name: '',
+        host: '',
+        port: 22,
+        username: 'root',
+        password: '',
+        privateKeyPath: '',
+        passphrase: ''
+      };
+      
+      // 重置批量添加相关数据
+      this.useBatchMode = false;
+      this.batchServers = [{
+        name: '',
+        host: '',
+        port: 22,
+        username: 'root',
+        authType: 'password',
+        password: '',
+        privateKeyPath: ''
+      }];
+      this.batchResults = [];
+      
+      this.showAddServerModal = true;
+    },
+    
+    // IP地址检测功能
+    async detectIpLocation(ip) {
+      if (!ip) {
+        alert('请输入IP地址');
+        return;
+      }
+      
+      try {
+        // 显示加载中
+        this.isDetectingIp = true;
+        
+        // 使用ip-api.com API获取IP地理位置信息（支持中文输出）
+        const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          // 根据当前的模式返回国家和城市信息
+          let locationInfo = data.country;
+          if (data.city) {
+            locationInfo += ` ${data.city}`;
+          }
+          if (data.regionName && data.regionName !== data.city) {
+            locationInfo += ` ${data.regionName}`;
+          }
+          
+          // 根据当前模式设置不同的字段
+          if (this.showAddServerModal) {
+            // 当前在添加服务器界面
+            this.newServer.host = ip;
+            if (this.useBatchMode) {
+              // 批量模式下最后一个输入的IP
+              const lastIndex = this.batchServers.length - 1;
+              if (lastIndex >= 0) {
+                this.batchServers[lastIndex].host = ip;
+              }
+            }
+          } else if (this.showAddVpsModal) {
+            // 当前在添加VPS界面
+            this.editingVps.ip_address = ip;
+            this.editingVps.country = locationInfo;
+          } else if (this.showBatchAddVpsModal) {
+            // 当前在批量添加VPS界面
+            const lastIndex = this.batchVpsList.length - 1;
+            if (lastIndex >= 0) {
+              this.batchVpsList[lastIndex].ip_address = ip;
+              this.batchVpsList[lastIndex].country = locationInfo;
+            }
+          }
+          
+          return locationInfo;
+        } else {
+          throw new Error(data.message || '无法获取IP地址信息');
+        }
+      } catch (error) {
+        console.error('IP检测失败:', error);
+        alert('IP检测失败: ' + (error.message || '未知错误'));
+        return null;
+      } finally {
+        this.isDetectingIp = false;
+      }
+    },
+    
+    // 在添加服务器模态框中检测IP
+    async detectServerIp() {
+      const ip = this.newServer.host;
+      if (!ip) {
+        alert('请输入IP地址');
+        return;
+      }
+      
+      const locationInfo = await this.detectIpLocation(ip);
+      if (locationInfo) {
+        alert(`IP地理位置: ${locationInfo}`);
+      }
+    },
+    
+    // 在批量添加服务器中检测行IP
+    async detectBatchServerIp(index) {
+      if (!this.batchServers[index] || !this.batchServers[index].host) {
+        alert('请输入IP地址');
+        return;
+      }
+      
+      const ip = this.batchServers[index].host;
+      const locationInfo = await this.detectIpLocation(ip);
+      if (locationInfo) {
+        alert(`IP地理位置: ${locationInfo}`);
+      }
+    },
+    
+    // 在添加VPS界面中检测IP
+    async detectVpsIp() {
+      const ip = this.editingVps.ip_address;
+      if (!ip) {
+        alert('请输入IP地址');
+        return;
+      }
+      
+      const locationInfo = await this.detectIpLocation(ip);
+      if (locationInfo) {
+        this.editingVps.country = locationInfo;
+      }
+    },
+    
+    // 在批量添加VPS界面中检测IP
+    async detectBatchVpsIp(index) {
+      if (!this.batchVpsList[index] || !this.batchVpsList[index].ip_address) {
+        alert('请输入IP地址');
+        return;
+      }
+      
+      const ip = this.batchVpsList[index].ip_address;
+      const locationInfo = await this.detectIpLocation(ip);
+      if (locationInfo) {
+        this.batchVpsList[index].country = locationInfo;
+      }
+    },
+    
+    // 检测已有服务器的IP地址
+    async detectExistingServerIp(server) {
+      if (!server || !server.host) {
+        alert('服务器IP地址不存在');
+        return;
+      }
+      
+      const ip = server.host;
+      const locationInfo = await this.detectIpLocation(ip);
+      if (locationInfo) {
+        // 直接将地理位置信息保存到服务器对象中，不弹窗
+        server.ipLocation = locationInfo;
+        
+        // 确保Vue能够检测到这个变更
+        this.servers = [...this.servers];
+      }
     },
   }
 }).mount('#app');

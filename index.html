@@ -126,42 +126,46 @@
       display: flex;
       justify-content: space-between;
       margin-top: 15px;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    
+    .server-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+    
+    .server-info p {
+      margin: 0;
     }
     
     .modal-overlay {
       position: fixed;
       top: 0;
       left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(0,0,0,0.5);
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
       display: flex;
-      align-items: center;
       justify-content: center;
-      z-index: 100;
+      align-items: flex-start;
+      z-index: 1000;
+      overflow-y: auto;
+      padding: 10px 0;
     }
     
     .modal {
-      display: block;
-      position: fixed;
-      z-index: 1000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background-color: rgba(0, 0, 0, 0.4);
-    }
-    
-    .modal-content {
-      background-color: #fefefe;
-      margin: 5% auto;
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      width: 95%;
+      max-width: 1600px; /* 进一步增加模态框最大宽度 */
+      margin: 10px auto;
+      overflow-y: auto;
+      max-height: 90vh;
       padding: 20px;
-      border: 1px solid #888;
-      border-radius: 5px;
-      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-      width: 80%;
-      max-width: 800px;
     }
     
     .modal.terminal-modal {
@@ -1236,32 +1240,70 @@
       border: 1px solid #ddd;
       font-size: 14px;
       margin-bottom: 15px;
-      table-layout: fixed;
+      table-layout: fixed; /* 改为固定布局，使列宽设置生效 */
     }
     
     .wps-style-table th {
       background-color: #f7f7f7;
       border: 1px solid #ddd;
-      padding: 8px;
+      padding: 10px;
       text-align: center;
       font-weight: bold;
       color: #333;
+      white-space: nowrap; /* 防止标题换行 */
     }
     
     .wps-style-table td {
       border: 1px solid #ddd;
-      padding: 5px;
+      padding: 8px;
       text-align: center;
       vertical-align: middle;
+    }
+    
+    /* 为批量添加服务器表格设置列宽 */
+    .batch-mode .wps-style-table th:nth-child(1),
+    .batch-mode .wps-style-table td:nth-child(1) {
+      width: 15%; /* 服务器名称 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(2),
+    .batch-mode .wps-style-table td:nth-child(2) {
+      width: 25%; /* 主机地址 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(3),
+    .batch-mode .wps-style-table td:nth-child(3) {
+      width: 8%; /* SSH端口 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(4),
+    .batch-mode .wps-style-table td:nth-child(4) {
+      width: 12%; /* 用户名 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(5),
+    .batch-mode .wps-style-table td:nth-child(5) {
+      width: 12%; /* 认证方式 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(6),
+    .batch-mode .wps-style-table td:nth-child(6) {
+      width: 20%; /* 密码/私钥路径 */
+    }
+    
+    .batch-mode .wps-style-table th:nth-child(7),
+    .batch-mode .wps-style-table td:nth-child(7) {
+      width: 8%; /* 操作 */
     }
     
     .wps-style-table input, 
     .wps-style-table select {
       width: 100%;
-      padding: 4px;
+      padding: 8px;
       border: 1px solid #ddd;
       border-radius: 3px;
-      font-size: 12px;
+      font-size: 14px;
+      box-sizing: border-box; /* 确保内边距不会增加元素的总宽度 */
     }
     
     .wps-style-table tr:nth-child(even) {
@@ -1612,6 +1654,89 @@
     .primary-button:hover {
       background-color: #0b7dda;
     }
+    
+    .batch-table {
+      width: 100%;
+      overflow-x: visible; /* 移除水平滚动，确保表格内容完全显示 */
+    }
+    
+    /* 为批量添加模式下的模态框特别优化 */
+    .modal.batch-mode {
+      max-width: 1800px; /* 批量模式使用更大的宽度 */
+      width: 98%;
+    }
+    
+    /* IP检测功能样式 */
+    .input-with-button {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      gap: 10px;
+    }
+    
+    .input-with-button input {
+      flex: 1;
+    }
+    
+    .detect-button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    
+    .detect-button:hover {
+      background-color: #45a049;
+    }
+    
+    .detect-button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    
+    .detect-button i {
+      margin-right: 5px;
+    }
+    
+    /* 批量表格中的检测按钮样式 */
+    .wps-style-table .input-with-button {
+      display: flex;
+    }
+    
+    .wps-style-table .mini-button {
+      padding: 3px 6px;
+      font-size: 12px;
+      margin-left: 5px;
+      white-space: nowrap;
+    }
+    
+    .mini-button.detect-button {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    .ip-location {
+      color: #4CAF50;
+      font-size: 12px;
+      margin: 5px 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    
+    .ip-location i {
+      color: #e74c3c;
+    }
+    
+    /* 设置刷新按钮样式为水平文字 */
+    .primary-button {
+      writing-mode: horizontal-tb;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -1628,7 +1753,7 @@
           <h1>VPS管理系统</h1>
         </div>
         <div>
-          <button v-if="activeTab === 'servers'" @click="showAddServerModal = true">添加服务器</button>
+          <button v-if="activeTab === 'servers'" @click="openAddServerModal">添加服务器</button>
         </div>
       </div>
       
@@ -1636,7 +1761,13 @@
         <div class="server-list">
           <div v-for="server in servers" :key="server.id" class="server-card">
             <h3>{{ server.name }}</h3>
-            <p>{{ server.host }}:{{ server.port }}</p>
+            <div class="server-info">
+              <p>{{ server.host }}:{{ server.port }}</p>
+              <button class="detect-button" @click="detectExistingServerIp(server)" :disabled="isDetectingIp" style="padding: 2px 5px; font-size: 12px;">
+                <i class="fas fa-search-location"></i> 检测IP
+              </button>
+            </div>
+            <p v-if="server.ipLocation" class="ip-location"><i class="fas fa-map-marker-alt"></i> {{ server.ipLocation }}</p>
             <p>{{ server.username }}</p>
             <div class="server-actions">
               <button @click="connectServer(server)">连接</button>
@@ -1730,8 +1861,7 @@
                 {{ server.name }} ({{ server.host }})
               </option>
             </select>
-            <button @click="loadWireguardInstances" :disabled="!wireguardSelectedServer">刷新</button>
-            <button @click="deployWireguard(wireguardSelectedServer)" :disabled="!wireguardSelectedServer" class="primary-button">部署新Wireguard</button>
+            <button @click="loadWireguardInstances" :disabled="!wireguardSelectedServer" class="primary-button">刷新</button>
           </div>
           
           <div v-if="wireguardLoading" class="loading-spinner">
@@ -1741,7 +1871,6 @@
           
           <div v-else-if="wireguardInstances.length === 0 && wireguardSelectedServer" class="no-instances">
             <p>未找到Wireguard实例，请先部署Wireguard</p>
-            <button @click="deployWireguard(wireguardSelectedServer)" class="primary-button">部署Wireguard</button>
           </div>
           
           <div v-else-if="wireguardInstances.length > 0" class="instances-list">
@@ -1753,7 +1882,7 @@
                   {{ instance }}
                 </option>
               </select>
-              <button @click="loadInstanceDetails" :disabled="!wireguardSelectedInstance">刷新</button>
+              <button @click="loadInstanceDetails" :disabled="!wireguardSelectedInstance" class="primary-button">刷新</button>
             </div>
             
             <div v-if="wireguardInstanceDetails" class="instance-details">
@@ -1935,6 +2064,8 @@
               <tr>
                 <th>购买日期</th>
                 <th>VPS名称</th>
+                <th>IP地址</th>
+                <th>国家地区</th>
                 <th>是否使用NAT</th>
                 <th>使用状态</th>
                 <th>销毁时间</th>
@@ -1945,15 +2076,17 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(vps, index) in vpsDataList" :key="index">
-                <td>{{ vps.purchase_date }}</td>
+              <tr v-for="(vps, index) in vpsDataList" :key="vps.name" :class="{ 'canceled-row': vps.status === '销毁' }">
+                <td>{{ formatDateForDisplay(vps.purchase_date) }}</td>
                 <td>{{ vps.name }}</td>
+                <td>{{ vps.ip_address || '-' }}</td>
+                <td>{{ vps.country || '-' }}</td>
                 <td>{{ vps.use_nat ? '是' : '否' }}</td>
-                <td>{{ vps.status }}</td>
-                <td>{{ vps.status === '销毁' ? vps.cancel_date : '' }}</td>
-                <td>{{ vps.usage_period || '0天0小时0分钟' }}</td>
-                <td>{{ vps.price_per_month }}</td>
-                <td>${{ vps.total_price || '0.00' }}</td>
+                <td :class="vps.status === '销毁' ? 'canceled-status' : 'active-status'">{{ vps.status }}</td>
+                <td>{{ vps.status === '销毁' ? formatDateForDisplay(vps.cancel_date) : '-' }}</td>
+                <td>{{ vps.usage_period || calculateUsagePeriod(vps) }}</td>
+                <td>${{ vps.price_per_month }}</td>
+                <td>${{ vps.total_price || vps.price_per_month }}</td>
                 <td>
                   <button @click="editVps(vps)" class="small-button">编辑</button>
                   <button @click="deleteVps(vps.name)" class="small-button delete-button">删除</button>
@@ -2060,7 +2193,7 @@
       </div>
       
       <div v-if="showAddServerModal" class="modal-overlay">
-        <div class="modal">
+        <div class="modal" :class="{'batch-mode': useBatchMode}">
           <div class="modal-header">
             <h2>添加服务器</h2>
             <button @click="showAddServerModal = false">关闭</button>
@@ -2079,7 +2212,12 @@
             
             <div class="form-group">
               <label>主机地址:</label>
-              <input v-model="newServer.host" placeholder="IP地址或域名">
+              <div class="input-with-button">
+                <input v-model="newServer.host" placeholder="IP地址或域名">
+                <button class="detect-button" @click="detectServerIp" :disabled="isDetectingIp">
+                  <i class="fas fa-search-location"></i> 检测IP
+                </button>
+              </div>
             </div>
             
             <div class="form-group">
@@ -2137,7 +2275,12 @@
                 <tbody>
                   <tr v-for="(server, index) in batchServers" :key="index">
                     <td><input v-model="server.name" placeholder="名称"></td>
-                    <td><input v-model="server.host" placeholder="IP地址"></td>
+                    <td>
+                      <div class="input-with-button">
+                        <input v-model="server.host" placeholder="IP地址">
+                        <button class="mini-button" @click="detectBatchServerIp(index)" :disabled="isDetectingIp">检测</button>
+                      </div>
+                    </td>
                     <td><input v-model="server.port" type="number" placeholder="22"></td>
                     <td><input v-model="server.username" placeholder="root"></td>
                     <td>
@@ -2164,8 +2307,8 @@
             </div>
             
             <div class="batch-controls">
-              <button @click="addBatchRow" class="action-button">添加行</button>
-              <button @click="clearBatchRows" class="action-button warning-button">清空表格</button>
+              <button @click="addBatchServerRow" class="action-button">添加行</button>
+              <button @click="clearBatchServers" class="action-button warning-button">清空表格</button>
               <button @click="exportBatchTable" class="action-button info-button">导出表格</button>
               <button @click="importBatchTable" class="action-button success-button">导入表格</button>
               <input type="file" ref="fileInput" style="display: none" @change="onFileSelected" accept=".json">
@@ -2244,6 +2387,21 @@
           </div>
           
           <div class="form-group">
+            <label>IP地址:</label>
+            <div class="input-with-button">
+              <input v-model="editingVps.ip_address" placeholder="例如: 192.168.1.1">
+              <button class="detect-button" @click="detectVpsIp" :disabled="isDetectingIp">
+                <i class="fas fa-search-location"></i> 检测IP
+              </button>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>国家地区:</label>
+            <input v-model="editingVps.country" placeholder="例如: 美国洛杉矶">
+          </div>
+          
+          <div class="form-group">
             <label>是否使用NAT:</label>
             <select v-model="editingVps.use_nat">
               <option :value="true">是</option>
@@ -2285,19 +2443,25 @@
               <table class="edit-table batch-table">
                 <thead>
                   <tr>
-                    <th style="width: 15%">VPS名称</th>
-                    <th style="width: 15%">购买日期</th>
-                    <th style="width: 10%">是否使用NAT</th>
-                    <th style="width: 10%">使用状态</th>
-                    <th style="width: 15%">销毁时间(可选)</th>
-                    <th style="width: 15%">单价/月($)</th>
-                    <th style="width: 10%">操作</th>
+                    <th style="width: 12%">VPS名称</th>
+                    <th style="width: 12%">购买日期</th>
+                    <th style="width: 12%">IP地址</th>
+                    <th style="width: 12%">国家地区</th>
+                    <th style="width: 8%">是否使用NAT</th>
+                    <th style="width: 8%">使用状态</th>
+                    <th style="width: 12%">销毁时间(可选)</th>
+                    <th style="width: 12%">单价/月($)</th>
+                    <th style="width: 8%">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(item, index) in batchVpsList" :key="index">
                     <td><input type="text" v-model="item.name" placeholder="VPS名称" style="width: 95%"></td>
                     <td><input type="date" v-model="item.purchase_date" style="width: 95%"></td>
+                    <td><input type="text" v-model="item.ip_address" placeholder="IP地址" style="width: 95%">
+                      <button class="mini-button" @click="detectBatchVpsIp(index)" :disabled="isDetectingIp">检测</button>
+                    </td>
+                    <td><input type="text" v-model="item.country" placeholder="国家地区" style="width: 95%"></td>
                     <td>
                       <select v-model="item.use_nat" style="width: 95%">
                         <option :value="true">是</option>

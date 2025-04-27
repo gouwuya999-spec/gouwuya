@@ -49,36 +49,18 @@ class BillingManager:
         初始化账单管理器
         
         Args:
-            config_file (str, optional): 配置文件路径
+            config_file (str): VPS配置文件路径
         """
-        # 设置日志
-        self.logger = logging.getLogger(__name__)
-        
-        # 配置文件
         self.config_file = config_file
-        
-        # VPS数据列表
         self.vps_data = []
-        
-        # 默认使用当前月份
-        now = datetime.datetime.now()
-        self.billing_year = now.year
-        self.billing_month = now.month
-        
-        # NAT费用
         self.nat_total_fee = 0
-        
-        # 分类统计的费用
-        self.non_nat_vps_total = 0
-        self.nat_vps_total = 0
-        
-        # 总账单金额
-        self.total_bill = 0
+        self.billing_year = datetime.datetime.now().year
+        self.billing_month = datetime.datetime.now().month
+        self.exchange_rate_cache = None  # 用于缓存汇率
         
         # 确保字体目录存在
         self.ensure_fonts_directory()
         
-        # 加载数据
         self.load_data()
         
     def ensure_fonts_directory(self):
@@ -507,52 +489,9 @@ class BillingManager:
         # 确保重新计算NAT费用
         self.reset_nat_fee()
         
-        # 分别计算使用NAT和未使用NAT的VPS费用
-        nat_vps_total = 0.0
-        non_nat_vps_total = 0.0
-        
-        # 获取当前时间，用于实时计算
-        current_time = datetime.datetime.now()
-        is_current_month = (year == current_time.year and month == current_time.month)
-        
-        # 计算每个VPS的费用并归类
-        for vps in self.vps_data:
-            # 计算使用时长
-            if is_current_month:
-                # 当前月需要传入now参数进行实时计算
-                usage_result = self.calculate_usage_period(vps, year, month, now=current_time)
-            else:
-                # 历史月份使用整月计算
-                usage_result = self.calculate_usage_period(vps, year, month)
-                
-            if isinstance(usage_result, tuple) and len(usage_result) == 4:
-                usage_string, days, hours, minutes = usage_result
-                
-                # 只有使用时长大于0的才计算费用
-                if days > 0 or hours > 0 or minutes > 0:
-                    # 实时计算价格
-                    price_per_month = vps.get('price_per_month', 0)
-                    
-                    # 对于当前月，始终使用实时计算
-                    if is_current_month:
-                        total_price = self.calculate_price(price_per_month, days, hours, minutes, year, month)
-                    else:
-                        # 非当前月，使用完整的计算方法，可能按整月计费
-                        total_price = self.calculate_price_with_purchase_date(vps, year, month)
-                    
-                    total_price = round(total_price, 2)  # 确保总价精确到2位小数
-                    
-                    # 将费用添加到对应分类中
-                    if vps.get('use_nat', False):
-                        nat_vps_total += total_price
-                    else:
-                        non_nat_vps_total += total_price
-        
-        # 确保费用精确到2位小数
-        nat_vps_total = round(nat_vps_total, 2)
-        non_nat_vps_total = round(non_nat_vps_total, 2)
-        vps_total = nat_vps_total + non_nat_vps_total
-        vps_total = round(vps_total, 2)
+        # 计算所有VPS的费用总和
+        vps_total = sum(float(vps.get('total_price', 0)) for vps in self.vps_data)
+        vps_total = round(vps_total, 2)  # 确保VPS总费用精确到2位小数
         
         # 检查是否有设置为使用NAT的VPS，不管其状态如何
         nat_vps_list = [vps for vps in self.vps_data if vps.get('use_nat', False) is True]
@@ -570,9 +509,6 @@ class BillingManager:
         is_current_month = (year == current_year and month == current_month)
         if is_current_month:
             self.nat_total_fee = nat_fee
-            # 保存分类费用数据
-            self.non_nat_vps_total = non_nat_vps_total
-            self.nat_vps_total = nat_vps_total
         
         # 计算总费用
         total = vps_total + nat_fee
@@ -582,15 +518,8 @@ class BillingManager:
         if is_current_month:
             self.total_bill = total
         
-        logger.info(f"计算{year}年{month}月总账单金额: 非NAT VPS费用={non_nat_vps_total:.2f}, 使用NAT的VPS费用={nat_vps_total:.2f}, NAT费用={nat_fee:.2f}, 总计={total:.2f}")
-        
-        # 返回费用分类信息和总金额
-        return {
-            'non_nat_vps_total': non_nat_vps_total,
-            'nat_vps_total': nat_vps_total,
-            'nat_fee': nat_fee,
-            'total': total
-        }
+        logger.info(f"计算{year}年{month}月总账单金额: VPS总费用={vps_total:.2f}, NAT费用={nat_fee:.2f}, 总计={total:.2f}")
+        return total
     
     def to_dataframe(self, year=None, month=None):
         """
@@ -615,6 +544,9 @@ class BillingManager:
         columns = ["VPS名称", "国家/地区", "使用状态", "销毁时间", "统计截止时间", "使用时长", "月单价", "总金额"]
         data = []
         
+        # 确保使用当前实时时间计算
+        current_time = datetime.datetime.now()
+        
         # 计算当前月份的结束日期
         next_month_year = billing_year
         next_month = billing_month + 1
@@ -631,46 +563,19 @@ class BillingManager:
         }
         month_name = month_names.get(billing_month, str(billing_month) + "月")
         
-        # 获取当前时间，用于实时计算
-        current_time = datetime.datetime.now()
-        is_current_month = (billing_year == current_time.year and billing_month == current_time.month)
-        
-        # 分别存储使用NAT和未使用NAT的VPS总金额
-        nat_vps_total = 0.0
-        non_nat_vps_total = 0.0
-        
         # 遍历VPS数据，计算对应月份的使用时长和费用
         for vps in self.vps_data:
             # 重新计算指定月份的使用时长
-            if is_current_month:
-                # 当前月需要传入now参数进行实时计算
-                usage_result = self.calculate_usage_period(vps, billing_year, billing_month, now=current_time)
-            else:
-                # 历史月份使用整月计算
-                usage_result = self.calculate_usage_period(vps, billing_year, billing_month)
-            
+            usage_result = self.calculate_usage_period(vps, billing_year, billing_month)
             if isinstance(usage_result, tuple) and len(usage_result) == 4:
                 usage_string, days, hours, minutes = usage_result
                 
                 # 只有使用时长大于0的才添加到账单
                 if days > 0 or hours > 0 or minutes > 0:
-                    # 实时计算价格
+                    # 实时计算价格 - 使用更精确的计算方法
                     price_per_month = vps.get('price_per_month', 0)
-                    
-                    # 对于当前月，始终使用实时计算
-                    if is_current_month:
-                        total_price = self.calculate_price(price_per_month, days, hours, minutes, billing_year, billing_month)
-                    else:
-                        # 非当前月，使用完整的计算方法，可能按整月计费
-                        total_price = self.calculate_price_with_purchase_date(vps, billing_year, billing_month)
-                    
+                    total_price = self.calculate_price_with_purchase_date(vps, billing_year, billing_month)
                     total_price = round(total_price, 2)  # 确保总价精确到2位小数
-                    
-                    # 将费用添加到对应分类中
-                    if vps.get('use_nat', False):
-                        nat_vps_total += total_price
-                    else:
-                        non_nat_vps_total += total_price
                     
                     # 准备行数据
                     row = [
@@ -697,23 +602,6 @@ class BillingManager:
             nat_fee = self.calculate_nat_fee(billing_year, billing_month)
             logger.info(f"在to_dataframe中计算的{billing_year}年{billing_month}月NAT费用: {nat_fee}")
         
-        # 确保费用精确到2位小数
-        nat_vps_total = round(nat_vps_total, 2)
-        non_nat_vps_total = round(non_nat_vps_total, 2)
-        nat_fee = round(nat_fee, 2)
-        total_bill = nat_vps_total + non_nat_vps_total + nat_fee
-        total_bill = round(total_bill, 2)
-        
-        # 添加一个空行作为分隔
-        df.loc[len(df)] = ['', '', '', '', '', '', '', '']
-        
-        # 添加费用类型汇总表格
-        df.loc[len(df)] = ['费用类型', '', '', '', '', '', '', '金额($)']
-        df.loc[len(df)] = ['未使用NAT的VPS费用', '', '', '', '', '', '', non_nat_vps_total]
-        df.loc[len(df)] = ['使用NAT的VPS费用', '', '', '', '', '', '', nat_vps_total]
-        df.loc[len(df)] = ['NAT费用', '', '', '', '', '', '', nat_fee]
-        df.loc[len(df)] = ['总金额', '', '', '', '', '', '', total_bill]
-        
         # 添加NAT总费用行（仅当NAT费用大于0时）
         if nat_fee > 0:
             # 获取指定年月的实时汇率
@@ -724,6 +612,10 @@ class BillingManager:
             nat_description = f'NAT费用(按当月实时汇率¥{exchange_rate_display}:$1)'
             nat_row = ['', '', '', '', '', '', nat_description, round(nat_fee, 2)]
             df.loc[len(df)] = nat_row
+        
+        # 计算当前月份的总金额
+        total_bill = df["总金额"].sum()
+        total_bill = round(total_bill, 2)  # 确保总费用精确到2位小数
         
         # 添加总计行
         total_row = ['', '', '', '', '', '', '总计', total_bill]
@@ -845,6 +737,27 @@ class BillingManager:
                 'color': 'purple'
             })
             
+            # 定义非NAT的VPS样式（蓝色字体）
+            non_nat_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 10,
+                'color': 'blue'
+            })
+            
+            # 定义非NAT的VPS货币格式（蓝色字体）
+            non_nat_money_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 10,
+                'num_format': '$#,##0.00',
+                'color': 'blue'
+            })
+            
             # 设置列宽
             worksheet.set_column('A:A', 12)  # VPS名称
             worksheet.set_column('B:B', 15)  # 是否使用NAT
@@ -892,11 +805,17 @@ class BillingManager:
                 current_money_format = money_format
                 
                 if is_destroyed:
+                    # 本月销毁的VPS整行显示为红色
                     current_cell_format = destroyed_format
                     current_money_format = destroyed_money_format
                 elif use_nat:
+                    # 使用NAT的VPS整行显示为紫色
                     current_cell_format = nat_format
                     current_money_format = nat_money_format
+                else:
+                    # 没有使用NAT的VPS整行显示为蓝色
+                    current_cell_format = non_nat_format
+                    current_money_format = non_nat_money_format
                 
                 worksheet.write(row_idx, 0, row['VPS名称'], current_cell_format)
                 worksheet.write(row_idx, 1, row['是否使用NAT'], current_cell_format)
@@ -1330,6 +1249,9 @@ class BillingManager:
             if price_per_month == 0:
                 return 0.0
                 
+            # 获取VPS名称，用于日志记录
+            vps_name = vps.get('name', '未知')
+                
             # 使用指定年月或默认设置的年月
             billing_year = year if year is not None else self.billing_year
             billing_month = month if month is not None else self.billing_month
@@ -1343,7 +1265,7 @@ class BillingManager:
                 # 如果没有购买日期，使用启用日期
                 purchase_date_str = vps.get('start_date')
                 if not purchase_date_str:
-                    logger.warning(f"VPS {vps.get('name')} 没有购买日期和启用日期，使用默认按月计费")
+                    logger.warning(f"VPS {vps_name} 没有购买日期和启用日期，使用默认按月计费")
                     # 计算使用时长
                     usage_result = self.calculate_usage_period(vps, billing_year, billing_month)
                     if isinstance(usage_result, tuple) and len(usage_result) == 4:
@@ -1482,23 +1404,24 @@ class BillingManager:
             if start_date > month_end:
                 return 0.0
             
-            # 获取当前时间
+            # 获取当前时间 - 确保使用实际当前时间进行计算
             current_time = datetime.datetime.now()
             
             # 设置计费结束时间
-            # 如果计算的是当前月份或未来月份，使用当前时间
-            # 否则使用月末时间
-            if (billing_year == current_time.year and billing_month == current_time.month) or \
-               (billing_year > current_time.year or 
-               (billing_year == current_time.year and billing_month > current_time.month)):
+            # 如果计算的是当前月份，使用当前时间（强制实时计算）
+            if billing_year == current_time.year and billing_month == current_time.month:
                 billing_end = min(current_time, month_end)
+                logger.info(f"VPS {vps_name} 正在计算当前月份，使用实时时间 {billing_end} 作为结束时间")
             else:
+                # 如果计算历史月份，使用月末时间
                 billing_end = month_end
+                logger.info(f"VPS {vps_name} 正在计算历史月份，使用月末 {billing_end} 作为结束时间")
                 
             # 如果有销毁日期且在当前月内，使用销毁日期作为结束时间
             if cancel_date and month_start <= cancel_date <= month_end:
                 billing_end = cancel_date
-                
+                logger.info(f"VPS {vps_name} 在当月销毁，使用销毁日期 {billing_end} 作为结束时间")
+            
             # 设置计费开始时间
             billing_start = month_start
             
@@ -1507,7 +1430,6 @@ class BillingManager:
                 billing_start = start_date
             
             # 判断VPS是否使用满一个月
-            vps_name = vps.get('name', '未知')
             is_full_month = False
             
             # 如果是销毁的VPS并且在当前月内销毁
@@ -1516,37 +1438,59 @@ class BillingManager:
                 first_day_of_month = datetime.datetime(billing_year, billing_month, 1)
                 days_used_in_month = (cancel_date - first_day_of_month).days + 1
                 
-                # 如果使用天数等于当月的总天数，则视为使用满了一个月
-                if days_used_in_month >= days_in_month:
+                # 必须严格满足使用整月的条件：
+                # 1. 使用天数等于当月的总天数
+                # 2. 必须从月初第一天开始使用
+                if days_used_in_month == days_in_month and billing_start.day == 1 and billing_start.hour == 0 and billing_start.minute == 0:
                     is_full_month = True
-                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月销毁，但使用满了一个月，按整月计费")
+                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月销毁，但使用满了完整一个月，按整月计费")
                 else:
-                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月销毁，使用了{days_used_in_month}天，按实际天数计费")
+                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月销毁，使用了{days_used_in_month}天，按实际分钟计费")
             else:
                 # 非销毁VPS或不在当月销毁的VPS，计算从billing_start到billing_end的时间
+                # 必须严格满足条件：1.从月初开始 2.到月末结束 3.天数等于当月天数
+                is_month_start = (billing_start.day == 1 and billing_start.hour == 0 and billing_start.minute == 0)
+                is_month_end = (billing_end.day == days_in_month and billing_end.hour == 23 and billing_end.minute == 59)
                 days_used = (billing_end - billing_start).days + 1
-                if days_used >= days_in_month:
+                
+                if is_month_start and is_month_end and days_used == days_in_month:
                     is_full_month = True
+                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月使用了完整一个月，按整月计费")
+                else:
+                    logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月未使用完整一个月，按实际分钟计费")
                 
             # 根据是否使用满一个月决定计费方式
             if is_full_month:
                 # 使用满一个月，按整月收费
                 total_price = price_per_month
-                logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月使用满一个月，收费 {total_price:.2f}")
+                logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月计费方式: 整月计费, 收费 ${total_price:.2f}")
             else:
-                # 计算使用的天数
+                # 计算使用的天数、小时和分钟，保留精度
                 time_diff = billing_end - billing_start
                 
-                # 计算天数、小时数和分钟数
+                # 获取总秒数
                 total_seconds = time_diff.total_seconds()
-                total_days = total_seconds / (24 * 3600)  # 保留小数
                 
-                # 计算每天价格
-                daily_price = price_per_month / days_in_month
+                # 计算总分钟数作为小数（保留小数部分以提高精度）
+                total_minutes = total_seconds / 60
                 
-                # 计算总价 (天数 * 每天价格)
-                total_price = total_days * daily_price
-                logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月使用了{total_days:.2f}天，按天计费，收费 {total_price:.2f}")
+                # 计算每分钟价格（基于用户设置的月单价）
+                minutes_per_month = days_in_month * 24 * 60
+                price_per_minute = price_per_month / minutes_per_month
+                
+                # 计算总价 (分钟数 * 每分钟价格)
+                total_price = total_minutes * price_per_minute
+                
+                # 记录详细计费信息
+                days_part = time_diff.days
+                hours_part = time_diff.seconds // 3600
+                minutes_part = (time_diff.seconds % 3600) // 60
+                seconds_part = time_diff.seconds % 60
+                
+                logger.info(f"VPS {vps_name} 在{billing_year}年{billing_month}月计费方式: 分钟计费")
+                logger.info(f"使用时长: {days_part}天{hours_part}小时{minutes_part}分钟{seconds_part}秒 ({total_minutes:.2f}分钟)")
+                logger.info(f"月单价: ${price_per_month:.2f}, 分钟单价: ${price_per_minute:.6f}")
+                logger.info(f"总计费: {total_minutes:.2f}分钟 × ${price_per_minute:.6f}/分钟 = ${total_price:.2f}")
             
             return round(total_price, 2)
             
@@ -1566,10 +1510,8 @@ class BillingManager:
         Returns:
             bool: 是否成功
         """
-        # 获取当前时间，用于实时计算
+        # 确保使用当前实时时间
         current_time = datetime.datetime.now()
-        current_year = current_time.year
-        current_month = current_time.month
         
         for vps in self.vps_data:
             # 实时计算使用时长，精确到分钟
@@ -1578,11 +1520,10 @@ class BillingManager:
                 usage_string, days, hours, minutes = usage_result
                 vps['usage_period'] = usage_string
                 
-                # 使用新的计费方法
+                # 使用新的计费方法，确保实时计算
                 price_per_month = vps.get('price_per_month', 0)
                 if price_per_month:
-                    # 对于当前月，始终使用实时计算方法
-                    total_price = self.calculate_price(price_per_month, days, hours, minutes, current_year, current_month)
+                    total_price = self.calculate_price_with_purchase_date(vps)
                     vps['total_price'] = round(total_price, 2)  # 确保总价精确到2位小数
             else:
                 # 向后兼容老格式
@@ -1672,6 +1613,9 @@ class BillingManager:
                 end_month = now.month
                 
             logger.info(f"生成月账单统计表 - 起始年份: {start_year}, 结束年月: {end_year}/{end_month}")
+            
+            # 获取当前实时时间用于计算
+            current_time = datetime.datetime.now()
             
             # 用于存储所有月份的账单数据
             bill_data = []
@@ -1805,8 +1749,8 @@ class BillingManager:
                         if original_status == "销毁" and cancel_date and cancel_date.year == year and cancel_date.month == month:
                             display_cancel_date_str = vps.get('cancel_date', '')
                         
-                        # 计算使用时长
-                        usage_result = self.calculate_usage_period(vps, year, month)
+                        # 计算使用时长，使用实时时间
+                        usage_result = self.calculate_usage_period(vps, year, month, now=current_time)
                         usage_str = ''
                         days = 0
                         hours = 0
@@ -1819,22 +1763,33 @@ class BillingManager:
                         if days == 0 and hours == 0 and minutes == 0:
                             continue
                             
-                        # 计算价格
+                        # 计算价格，使用更精确的方法
                         price_per_month = float(vps.get('price_per_month', 0))
                         total_price = self.calculate_price_with_purchase_date(vps, year, month)
                         total_price = round(total_price, 2)  # 确保总价精确到2位小数
                         
                         # 决定在该月账单中显示的状态
-                        display_status = vps.get('status')  # 使用经过前面处理的状态
+                        # 如果是销毁状态，仅在销毁当月显示销毁状态，其他情况显示为"在用"
+                        if original_status == "销毁":
+                            if cancel_date and cancel_date.year == year and cancel_date.month == month:
+                                display_status = "销毁"
+                            else:
+                                display_status = "在用"
+                        else:
+                            display_status = vps.get('status')
                         
-                        # 构建行数据，根据是否有销毁VPS决定是否包含销毁时间列
+                        # 创建行数据
                         row_data = {
                             'VPS名称': vps_name,
-                            '是否使用NAT': '是' if use_nat else '否',
+                            '国家/地区': vps.get('country', ''),
                             '使用状态': display_status,
                             '使用时长': usage_str,
-                            '单价/月（$）': round(price_per_month, 2),
-                            '合计（$）': total_price
+                            '单价/月（$）': price_per_month,
+                            '合计（$）': total_price,
+                            '是否使用NAT': '是' if use_nat else '否',
+                            '购买日期': purchase_date_str,
+                            '销毁时间': display_cancel_date_str,
+                            'raw_value': vps  # 用于调试，JSON输出时会忽略这个字段
                         }
                         
                         # 只有在当月有VPS销毁时才添加销毁时间列
@@ -1919,8 +1874,7 @@ class BillingManager:
                 'VPS数量': 0,
                 'NAT费用': 0,
                 '月总费用': 0,
-                '账单行': [],
-                '显示销毁时间列': False  # 默认不显示销毁时间列
+                '账单行': []
             }
             
             # 设置月份名称
@@ -1941,70 +1895,13 @@ class BillingManager:
             vps_list = self.get_all_vps()
             active_vps_count = 0
             
-            # 分别存储使用NAT和未使用NAT的VPS总金额
-            nat_vps_total = 0.0
-            non_nat_vps_total = 0.0
-            
-            # 构建指定年月的最后一天日期，用于比较
-            try:
-                last_day_of_month = calendar.monthrange(year, month)[1]
-                current_month_end = datetime.datetime(year, month, last_day_of_month, 23, 59, 59)
-                current_month_start = datetime.datetime(year, month, 1, 0, 0, 0)
-            except Exception as e:
-                logger.error(f"构建月份边界时间失败: {e}")
-                current_month_end = datetime.datetime.now()
-                current_month_start = datetime.datetime.now().replace(day=1, hour=0, minute=0, second=0)
-            
-            # 获取当前时间，用于实时计算
+            # 获取当前实时时间用于计算
             current_time = datetime.datetime.now()
-            is_current_month = (year == current_time.year and month == current_time.month)
             
             # 计算每个VPS在指定月份的使用情况
             for vps in vps_list:
-                # 确定当前VPS的状态和销毁时间（针对当前查询的月份）
-                vps_status = vps.get('status', '')
-                cancel_date_str = vps.get('cancel_date', '')
-                is_cancelled = False
-                cancel_date = None
-                
-                # 如果有销毁日期，解析成日期对象以便比较
-                if cancel_date_str and vps_status == "销毁":
-                    try:
-                        # 尝试解析销毁日期
-                        cancel_date = datetime.datetime.strptime(cancel_date_str, "%Y/%m/%d")
-                        is_cancelled = True
-                        
-                        # 如果销毁日期在当前月份之后，那么对当前月份来说，VPS还在使用中
-                        # 如果销毁日期在当前月份之前，那么VPS在当前月份不应该显示
-                        # 如果销毁日期在当前月份内，那么VPS状态为"销毁"
-                        if cancel_date > current_month_end:
-                            # 销毁日期在查询月份之后，对该月份来说VPS仍在使用中
-                            display_status = "在用"
-                            display_cancel_date = ""
-                        elif cancel_date < current_month_start:
-                            # 销毁日期在查询月份之前，不显示该VPS
-                            continue
-                        else:
-                            # 销毁日期在查询月份内，显示销毁状态和时间
-                            display_status = "销毁"
-                            display_cancel_date = cancel_date_str
-                            bill_data['显示销毁时间列'] = True  # 需要显示销毁时间列
-                    except ValueError as e:
-                        logger.warning(f"解析销毁日期出错: {cancel_date_str}, {str(e)}")
-                        display_status = vps_status
-                        display_cancel_date = cancel_date_str
-                else:
-                    # 无销毁日期或状态不为销毁
-                    display_status = vps_status
-                    display_cancel_date = ""
-                    
-                # 计算使用时长 - 使用当前时间进行实时计算
-                if is_current_month:
-                    # 当前月需要传入now参数进行实时计算
-                    usage_result = self.calculate_usage_period(vps, year, month, now=current_time)
-                else:
-                    # 历史月份使用整月计算
-                    usage_result = self.calculate_usage_period(vps, year, month)
+                # 计算使用时长，确保使用实时时间
+                usage_result = self.calculate_usage_period(vps, year, month, now=current_time)
                 
                 if isinstance(usage_result, tuple) and len(usage_result) == 4:
                     usage_string, days, hours, minutes = usage_result
@@ -2013,23 +1910,55 @@ class BillingManager:
                     if days > 0 or hours > 0 or minutes > 0:
                         active_vps_count += 1
                         
-                        # 计算VPS价格 - 使用统一的计算方法
+                        # 计算VPS价格，使用更精确的方法
                         price_per_month = vps.get('price_per_month', 0)
-                        
-                        # 对于当前月，始终使用实时计算
-                        if is_current_month:
-                            total_price = self.calculate_price(price_per_month, days, hours, minutes, year, month)
-                        else:
-                            # 非当前月，使用完整的计算方法，可能按整月计费
-                            total_price = self.calculate_price_with_purchase_date(vps, year, month)
-                        
+                        total_price = self.calculate_price_with_purchase_date(vps, year, month)
                         total_price = round(total_price, 2)  # 确保价格精确到2位小数
                         
-                        # 将费用添加到对应分类中
-                        if vps.get('use_nat', False):
-                            nat_vps_total += total_price
-                        else:
-                            non_nat_vps_total += total_price
+                        # 获取原始状态和销毁日期
+                        original_status = vps.get('status', '')
+                        cancel_date_str = vps.get('cancel_date', '')
+                        display_status = original_status
+                        display_cancel_date = ''
+                        
+                        # 如果是销毁状态，需要处理销毁日期和状态显示逻辑
+                        if original_status == "销毁" and cancel_date_str:
+                            cancel_date = None
+                            try:
+                                # 尝试解析销毁日期
+                                try:
+                                    cancel_date = datetime.datetime.strptime(cancel_date_str, "%Y/%m/%d")
+                                except ValueError:
+                                    try:
+                                        cancel_date = datetime.datetime.strptime(cancel_date_str, "%Y-%m-%d")
+                                    except ValueError:
+                                        try:
+                                            parts = cancel_date_str.split('/')
+                                            if len(parts) == 3:
+                                                y_part = int(parts[0])
+                                                m_part = int(parts[1])
+                                                d_part = int(parts[2])
+                                                cancel_date = datetime.datetime(y_part, m_part, d_part)
+                                        except Exception:
+                                            pass
+                                
+                                # 根据销毁日期设置显示状态和时间
+                                if cancel_date:
+                                    # 只在销毁当月显示"销毁"状态和销毁时间
+                                    if cancel_date.year == year and cancel_date.month == month:
+                                        display_status = "销毁"
+                                        display_cancel_date = cancel_date_str
+                                    else:
+                                        # 在销毁之前的月份显示为"在用"，不显示销毁时间
+                                        display_status = "在用"
+                                        display_cancel_date = ''
+                                    
+                                    # 如果销毁日期在查询月份之前，则应该跳过此VPS
+                                    if cancel_date.year < year or (cancel_date.year == year and cancel_date.month < month):
+                                        logger.info(f"VPS {vps.get('name', '未命名')} 在 {cancel_date_str} 销毁，早于查询月份 {year}/{month}，跳过显示")
+                                        continue
+                            except Exception as e:
+                                logger.error(f"解析销毁日期出错: {str(e)}")
                         
                         # 添加到账单行
                         bill_row = {
@@ -2040,10 +1969,10 @@ class BillingManager:
                             '统计截止时间': f"{year}年{month_name}",
                             '使用时长': usage_string,
                             '月单价': vps.get('price_per_month', 0),
-                            '单价/月（$）': vps.get('price_per_month', 0),
                             '总金额': total_price,
-                            '合计（$）': total_price,
-                            '是否使用NAT': '是' if vps.get('use_nat', False) else '否'
+                            '是否使用NAT': '是' if vps.get('use_nat', False) else '否',
+                            '单价/月（$）': vps.get('price_per_month', 0),
+                            '合计（$）': total_price
                         }
                         
                         bill_data['账单行'].append(bill_row)
@@ -2063,14 +1992,6 @@ class BillingManager:
             bill_data['VPS数量'] = active_vps_count
             bill_data['NAT费用'] = nat_fee
             bill_data['月总费用'] = total_bill
-            
-            # 添加费用类型汇总数据
-            bill_data['费用汇总'] = {
-                '未使用NAT的VPS费用': round(non_nat_vps_total, 2),
-                '使用NAT的VPS费用': round(nat_vps_total, 2),
-                'NAT费用': nat_fee,
-                '总金额': total_bill
-            }
             
             # 如果NAT费用大于0，添加NAT使用详情
             if nat_fee > 0:
@@ -2188,58 +2109,6 @@ class BillingManager:
                             '合计（$）': row.get('总金额', 0)
                         }])], ignore_index=True)
                     
-                    # 添加空行分隔
-                    empty_row = pd.Series({
-                        'VPS名称': '',
-                        '使用状态': '',
-                        '使用时长': '',
-                        '单价': '',
-                        '合计（$）': ''
-                    })
-                    month_df = pd.concat([month_df, pd.DataFrame([empty_row])], ignore_index=True)
-                    
-                    # 添加费用汇总表格
-                    if '费用汇总' in bill_data:
-                        fee_summary = bill_data['费用汇总']
-                        
-                        # 添加表头
-                        summary_header = pd.Series({
-                            'VPS名称': '费用类型',
-                            '合计（$）': '金额($)'
-                        })
-                        month_df = pd.concat([month_df, pd.DataFrame([summary_header])], ignore_index=True)
-                        
-                        # 添加未使用NAT的VPS费用
-                        non_nat_row = pd.Series({
-                            'VPS名称': '未使用NAT的VPS费用',
-                            '合计（$）': fee_summary.get('未使用NAT的VPS费用', 0)
-                        })
-                        month_df = pd.concat([month_df, pd.DataFrame([non_nat_row])], ignore_index=True)
-                        
-                        # 添加使用NAT的VPS费用
-                        nat_vps_row = pd.Series({
-                            'VPS名称': '使用NAT的VPS费用',
-                            '合计（$）': fee_summary.get('使用NAT的VPS费用', 0)
-                        })
-                        month_df = pd.concat([month_df, pd.DataFrame([nat_vps_row])], ignore_index=True)
-                        
-                        # 添加NAT费用
-                        nat_fee_row = pd.Series({
-                            'VPS名称': 'NAT费用',
-                            '合计（$）': fee_summary.get('NAT费用', 0)
-                        })
-                        month_df = pd.concat([month_df, pd.DataFrame([nat_fee_row])], ignore_index=True)
-                        
-                        # 添加总金额
-                        total_summary_row = pd.Series({
-                            'VPS名称': '总金额',
-                            '合计（$）': fee_summary.get('总金额', 0)
-                        })
-                        month_df = pd.concat([month_df, pd.DataFrame([total_summary_row])], ignore_index=True)
-                        
-                        # 再添加一个空行
-                        month_df = pd.concat([month_df, pd.DataFrame([empty_row])], ignore_index=True)
-                    
                     # 添加NAT费用和总计行
                     if bill_data['NAT费用'] > 0:
                         # 获取NAT详情
@@ -2309,6 +2178,30 @@ class BillingManager:
                                 cell.alignment = right_alignment
                             else:
                                 cell.alignment = center_alignment
+                            
+                            # 根据不同状态设置不同颜色
+                            if row < worksheet.max_row - 1:  # 排除NAT费用和总计行
+                                # 获取第B列的使用状态值
+                                status_cell = worksheet.cell(row=row, column=2)
+                                status = status_cell.value
+                                
+                                # 获取该行是否使用NAT (如果有该数据)
+                                use_nat = None
+                                if '是否使用NAT' in month_df.columns:
+                                    nat_col = month_df.columns.get_loc('是否使用NAT') + 1
+                                    nat_cell = worksheet.cell(row=row, column=nat_col)
+                                    use_nat = nat_cell.value
+                                
+                                # 设置颜色
+                                if status == '销毁':
+                                    # 销毁的VPS设为红色
+                                    cell.font = Font(name='微软雅黑', size=10, color='FF0000')
+                                elif use_nat == '是':
+                                    # 使用NAT的VPS设为紫色
+                                    cell.font = Font(name='微软雅黑', size=10, color='800080')
+                                elif use_nat == '否':
+                                    # 不使用NAT的VPS设为蓝色
+                                    cell.font = Font(name='微软雅黑', size=10, color='0000FF')
                             
                             # 最后两行（NAT费用和总计）使用特殊样式
                             if row >= worksheet.max_row - 1:
@@ -2516,6 +2409,43 @@ class BillingManager:
                                     cell = sheet.cell(row=row, column=col)
                                     cell.font = row_font
                                     cell.border = bordered_cell
+                                    
+                                    # 根据不同状态设置不同颜色
+                                    if row < sheet.max_row - 1:  # 排除NAT费用和总计行
+                                        # 获取使用状态值
+                                        status_col = None
+                                        for idx, col_name in enumerate(month_df.columns):
+                                            if col_name == '使用状态':
+                                                status_col = idx + 1
+                                                break
+                                        
+                                        nat_col = None
+                                        for idx, col_name in enumerate(month_df.columns):
+                                            if col_name == '是否使用NAT':
+                                                nat_col = idx + 1
+                                                break
+                                            
+                                        if status_col and nat_col:
+                                            status_cell = sheet.cell(row=row, column=status_col)
+                                            nat_cell = sheet.cell(row=row, column=nat_col)
+                                            
+                                            status = status_cell.value
+                                            use_nat = nat_cell.value
+                                            
+                                            # 设置颜色
+                                            if status == '销毁':
+                                                # 销毁的VPS设为红色
+                                                cell.font = Font(name='微软雅黑', size=10, color='FF0000')
+                                            elif use_nat == '是':
+                                                # 使用NAT的VPS设为紫色
+                                                cell.font = Font(name='微软雅黑', size=10, color='800080')
+                                            elif use_nat == '否':
+                                                # 不使用NAT的VPS设为蓝色
+                                                cell.font = Font(name='微软雅黑', size=10, color='0000FF')
+                                    
+                                    # NAT费用和总计行使用特殊样式
+                                    if row >= sheet.max_row - 1:
+                                        cell.font = Font(name='微软雅黑', size=10, bold=True, color='000000')
                                     
                                     # VPS名称列左对齐
                                     if col == 1:
