@@ -2378,7 +2378,7 @@
           
           <div class="form-group">
             <label>购买日期:</label>
-            <input type="date" v-model="editingVps.purchase_date">
+            <input type="text" v-model="editingVps.purchase_date" placeholder="YYYY-MM-DD">
           </div>
           
           <div class="form-group">
@@ -2419,7 +2419,7 @@
           
           <div class="form-group" v-if="editingVps.status === '销毁'">
             <label>销毁时间:</label>
-            <input type="date" v-model="editingVps.cancel_date">
+            <input type="text" v-model="editingVps.cancel_date" placeholder="YYYY-MM-DD">
           </div>
           
           <div class="form-group">
@@ -2457,7 +2457,7 @@
                 <tbody>
                   <tr v-for="(item, index) in batchVpsList" :key="index">
                     <td><input type="text" v-model="item.name" placeholder="VPS名称" style="width: 95%"></td>
-                    <td><input type="date" v-model="item.purchase_date" style="width: 95%"></td>
+                    <td><input type="text" v-model="item.purchase_date" placeholder="YYYY-MM-DD" style="width: 95%"></td>
                     <td><input type="text" v-model="item.ip_address" placeholder="IP地址" style="width: 95%">
                       <button class="mini-button" @click="detectBatchVpsIp(index)" :disabled="isDetectingIp">检测</button>
                     </td>
@@ -2474,7 +2474,7 @@
                         <option value="销毁">销毁</option>
                       </select>
                     </td>
-                    <td><input type="date" v-model="item.cancel_date" :disabled="item.status !== '销毁'" style="width: 95%"></td>
+                    <td><input type="text" v-model="item.cancel_date" placeholder="YYYY-MM-DD" :disabled="item.status !== '销毁'" style="width: 95%"></td>
                     <td><input type="number" v-model="item.price_per_month" min="0" step="0.01" style="width: 95%"></td>
                     <td><button @click="removeBatchItem(index)" class="action-button danger-button">删除</button></td>
                   </tr>

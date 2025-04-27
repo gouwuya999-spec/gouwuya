@@ -56,6 +56,8 @@ createApp({
       cursorPosition: '',
       // 通知消息
       notification: null,
+      // 状态相关
+      loading: false,
       // 月账单统计相关数据
       selectedYear: new Date().getFullYear(),
       selectedMonth: new Date().getMonth() + 1,
@@ -1024,12 +1026,12 @@ createApp({
         }
         
         if (!this.editingVps.purchase_date) {
-          alert('请选择购买日期');
+          alert('请输入购买日期');
           return;
         }
         
         if (this.editingVps.status === '销毁' && !this.editingVps.cancel_date) {
-          alert('请选择销毁时间');
+          alert('请输入销毁时间');
           return;
         }
         
@@ -1140,6 +1142,13 @@ createApp({
       if (day.length < 2) day = '0' + day;
       
       return [year, month, day].join('-');
+    },
+    
+    // 格式化日期用于显示
+    formatDateForDisplay(dateStr) {
+      if (!dateStr) return '-';
+      // 将YYYY/MM/DD格式转换为YYYY-MM-DD以便于显示
+      return dateStr.replace(/\//g, '-');
     },
     
     // 初始化示例数据

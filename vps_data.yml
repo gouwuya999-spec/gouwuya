@@ -1,3 +1,25 @@
 nat_fee: 0
-total_bill: 0
-vps_servers: []
+total_bill: 22.07
+vps_servers:
+- cancel_date: 2025/4/20
+  country: 德国 法兰克福 黑森州
+  ip_address: 45.76.87.99
+  name: VPS-1
+  price_per_month: 20
+  purchase_date: 2024/12/16
+  start_date: 2024/12/16
+  status: 销毁
+  total_price: 13.33
+  usage_period: 19天23小时59分钟
+  use_nat: true
+- cancel_date: 2025/4/9
+  country: 德国 法兰克福 黑森州
+  ip_address: 80.240.24.227
+  name: VPS-2
+  price_per_month: 20
+  purchase_date: 2024/12/26
+  start_date: 2024/12/26
+  status: 销毁
+  total_price: 6.0
+  usage_period: 8天23小时59分钟
+  use_nat: false
