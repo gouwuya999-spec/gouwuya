@@ -55,9 +55,13 @@ createApp({
       // 状态栏信息
       cursorPosition: '',
       // 通知消息
-      notification: null,
-      // 状态相关
-      loading: false,
+      notification: {
+        message: '',
+        type: 'info',
+        show: false
+      },
+      // 刷新按钮状态
+      isRefreshing: false,
       // 月账单统计相关数据
       selectedYear: new Date().getFullYear(),
       selectedMonth: new Date().getMonth() + 1,
@@ -149,6 +153,62 @@ createApp({
         console.error('获取版本号失败:', error);
         this.appVersion = '未知';
       }
+    },
+    
+    // 刷新系统数据
+    async refreshData() {
+      console.log('刷新系统数据');
+      try {
+        // 设置刷新状态为true，激活动画
+        this.isRefreshing = true;
+        
+        // 显示加载中的提示
+        this.showNotification('正在刷新数据...', 'info');
+        
+        // 根据当前活动的标签页刷新不同的数据
+        if (this.activeTab === 'servers') {
+          // 刷新服务器列表
+          await this.loadServers();
+        } else if (this.activeTab === 'wireguard') {
+          // 刷新Wireguard实例
+          await this.loadWireguardInstances();
+          if (this.wireguardSelectedServer && this.wireguardSelectedInstance) {
+            await this.loadInstanceDetails();
+          }
+        } else if (this.activeTab === 'monthly-billing') {
+          // 刷新月账单数据
+          await this.loadMonthlyBillSummary();
+          await this.getCurrentMonthBill();
+        }
+        
+        // 刷新VPS数据列表 (无论在哪个标签页都可能需要)
+        await this.loadVpsDataList();
+        
+        // 显示刷新成功的提示
+        this.showNotification('数据刷新成功！', 'success');
+      } catch (error) {
+        console.error('刷新数据失败:', error);
+        this.showNotification('刷新数据失败: ' + (error.message || '未知错误'), 'error');
+      } finally {
+        // 无论成功或失败，最后都需要重置刷新状态
+        setTimeout(() => {
+          this.isRefreshing = false;
+        }, 500); // 延迟500ms后停止动画，让用户看到完整的旋转
+      }
+    },
+    
+    // 显示通知消息
+    showNotification(message, type = 'info') {
+      this.notification = {
+        message,
+        type,
+        show: true
+      };
+      
+      // 3秒后自动关闭通知
+      setTimeout(() => {
+        this.notification.show = false;
+      }, 3000);
     },
     
     // 加载已保存的服务器列表
@@ -1030,9 +1090,24 @@ createApp({
           return;
         }
         
+        // 验证购买日期格式
+        const purchaseDateRegex = /^\d{4}[-\/](0[1-9]|1[0-2])[-\/](0[1-9]|[12][0-9]|3[01])$/;
+        if (!purchaseDateRegex.test(this.editingVps.purchase_date)) {
+          alert('购买日期格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式');
+          return;
+        }
+        
         if (this.editingVps.status === '销毁' && !this.editingVps.cancel_date) {
           alert('请输入销毁时间');
           return;
+        }
+        
+        // 验证销毁日期格式
+        if (this.editingVps.cancel_date) {
+          if (!purchaseDateRegex.test(this.editingVps.cancel_date)) {
+            alert('销毁时间格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式');
+            return;
+          }
         }
         
         if (!this.editingVps.price_per_month || this.editingVps.price_per_month <= 0) {
@@ -1131,7 +1206,7 @@ createApp({
       return total.toFixed(2);
     },
     
-    // 格式化日期为YYYY-MM-DD
+    // 格式化日期为YYYY/MM/DD
     formatDate(date) {
       const d = new Date(date);
       let month = '' + (d.getMonth() + 1);
@@ -1141,14 +1216,7 @@ createApp({
       if (month.length < 2) month = '0' + month;
       if (day.length < 2) day = '0' + day;
       
-      return [year, month, day].join('-');
-    },
-    
-    // 格式化日期用于显示
-    formatDateForDisplay(dateStr) {
-      if (!dateStr) return '-';
-      // 将YYYY/MM/DD格式转换为YYYY-MM-DD以便于显示
-      return dateStr.replace(/\//g, '-');
+      return [year, month, day].join('/');
     },
     
     // 初始化示例数据
@@ -1252,6 +1320,9 @@ createApp({
           return;
         }
         
+        // 验证日期格式的正则表达式
+        const dateRegex = /^\d{4}[-\/](0[1-9]|1[0-2])[-\/](0[1-9]|[12][0-9]|3[01])$/;
+        
         // 验证每一行数据
         const validatedList = [];
         let hasErrors = false;
@@ -1272,8 +1343,22 @@ createApp({
             break;
           }
           
+          // 验证购买日期格式
+          if (!dateRegex.test(item.purchase_date)) {
+            alert(`第 ${i+1} 行的购买日期格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式`);
+            hasErrors = true;
+            break;
+          }
+          
           if (item.status === '销毁' && !item.cancel_date) {
             alert(`第 ${i+1} 行的状态为销毁，但未填写销毁时间`);
+            hasErrors = true;
+            break;
+          }
+          
+          // 验证销毁日期格式
+          if (item.status === '销毁' && item.cancel_date && !dateRegex.test(item.cancel_date)) {
+            alert(`第 ${i+1} 行的销毁时间格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式`);
             hasErrors = true;
             break;
           }
@@ -2158,6 +2243,116 @@ createApp({
         
         // 确保Vue能够检测到这个变更
         this.servers = [...this.servers];
+      }
+    },
+    
+    // 处理表格粘贴
+    async handleTablePaste(event) {
+      try {
+        let clipboardText = '';
+        
+        // 如果是粘贴事件
+        if (event && event.clipboardData) {
+          clipboardText = event.clipboardData.getData('text');
+          // 阻止默认行为
+          event.preventDefault();
+        } 
+        // 尝试使用现代剪贴板API直接读取
+        else if (navigator.clipboard && navigator.clipboard.readText) {
+          try {
+            clipboardText = await navigator.clipboard.readText();
+          } catch (clipError) {
+            console.error('无法直接访问剪贴板:', clipError);
+            // 如果直接访问失败，回退到提示输入
+            clipboardText = prompt('请将从Excel、Google表格或其他电子表格中复制的数据粘贴到此处：');
+          }
+        } else {
+          // 浏览器不支持Clipboard API，回退到提示输入
+          clipboardText = prompt('请将从Excel、Google表格或其他电子表格中复制的数据粘贴到此处：');
+        }
+        
+        if (!clipboardText) return;
+        
+        // 按换行符分割成行
+        const rows = clipboardText.split('\n').filter(row => row.trim());
+        
+        if (rows.length === 0) {
+          alert('未检测到有效数据');
+          return;
+        }
+        
+        // 清空当前表格，保留一行如果用户想要保留现有数据
+        if (this.batchVpsList.length > 0 && confirm('是否清空当前表格数据？')) {
+          this.batchVpsList = [];
+        }
+        
+        // 处理每一行数据
+        rows.forEach(row => {
+          // 首先尝试按制表符分割（从Excel复制的标准格式）
+          let columns = row.split('\t').map(col => col.trim());
+          
+          // 如果只有一列，尝试按逗号分割（CSV格式）
+          if (columns.length <= 1) {
+            columns = row.split(',').map(col => col.trim());
+          }
+          
+          // 如果只有一列，尝试按空格分割（但要注意保留多个连续空格作为一个分隔符）
+          if (columns.length <= 1) {
+            columns = row.split(/\s{2,}/).map(col => col.trim()).filter(col => col);
+          }
+          
+          if (columns.length >= 2) { // 至少需要名称和日期
+            const vpsItem = this.createEmptyBatchRow();
+            
+            // 根据列的数量和位置填充数据
+            if (columns.length >= 1) vpsItem.name = columns[0];
+            if (columns.length >= 2) {
+              // 处理日期格式
+              const dateStr = columns[1];
+              if (dateStr) {
+                vpsItem.purchase_date = dateStr.replace(/[-\.]/g, '/');
+              }
+            }
+            if (columns.length >= 3) vpsItem.ip_address = columns[2];
+            if (columns.length >= 4) vpsItem.country = columns[3];
+            if (columns.length >= 5) {
+              const natValue = columns[4].toLowerCase();
+              vpsItem.use_nat = natValue === '是' || natValue === 'true' || natValue === '1' || natValue === 'yes';
+            }
+            if (columns.length >= 6) {
+              const statusValue = columns[5];
+              vpsItem.status = statusValue === '销毁' ? '销毁' : '在用';
+            }
+            if (columns.length >= 7) {
+              const cancelDate = columns[6];
+              if (cancelDate && cancelDate !== '-') {
+                vpsItem.cancel_date = cancelDate.replace(/[-\.]/g, '/');
+              }
+            }
+            if (columns.length >= 8) {
+              // 处理价格，去除任何非数字和小数点的字符（如$符号）
+              const priceStr = columns[7].replace(/[^\d.]/g, '');
+              const price = parseFloat(priceStr);
+              if (!isNaN(price)) vpsItem.price_per_month = price;
+            }
+            
+            this.batchVpsList.push(vpsItem);
+          }
+        });
+        
+        if (this.batchVpsList.length === 0) {
+          this.batchVpsList = [this.createEmptyBatchRow()];
+          alert('解析数据失败，请确保复制的数据格式正确。数据应包含至少VPS名称和购买日期两列。');
+        } else {
+          alert(`成功解析 ${this.batchVpsList.length} 行数据，请检查数据是否正确填充到表格中。`);
+        }
+      } catch (error) {
+        console.error('处理粘贴数据失败:', error);
+        alert('处理粘贴数据失败: ' + (error.message || '未知错误'));
+        // 确保至少有一行空数据
+        if (this.batchVpsList.length === 0) {
+          this.batchVpsList = [this.createEmptyBatchRow()];
+        }
       }
     },
   }
