@@ -22,6 +22,8 @@ createApp({
         privateKeyPath: '',
         passphrase: ''
       },
+      // 页面加载状态
+      loading: false,
       // 批量添加服务器相关变量
       useBatchMode: false,
       batchServers: [],
@@ -142,6 +144,13 @@ createApp({
   },
   
   methods: {
+    // 格式化日期为显示格式 (YYYY/MM/DD)
+    formatDateForDisplay(dateStr) {
+      if (!dateStr) return '';
+      // 同时支持横杠和斜杠格式的输入，输出统一为斜杠格式
+      return dateStr.replace(/-/g, '/');
+    },
+    
     // 获取应用版本号
     async getAppVersion() {
       try {
@@ -1149,6 +1158,14 @@ createApp({
           // 关闭弹窗
           this.showAddVpsModal = false;
           
+          // 重新加载VPS数据列表，确保UI显示最新数据
+          try {
+            await this.loadVpsDataList();
+          } catch (loadError) {
+            console.error('重新加载VPS数据失败:', loadError);
+            // 加载失败时不影响主流程，已有本地更新作为备份
+          }
+          
           // 重新生成当前月账单
           this.generateMonthlyBill();
         } else {
@@ -1177,6 +1194,14 @@ createApp({
             
             // 更新本地数据
             this.vpsDataList = this.vpsDataList.filter(vps => vps.name !== vpsName);
+            
+            // 重新加载VPS数据列表，确保UI显示最新数据
+            try {
+              await this.loadVpsDataList();
+            } catch (loadError) {
+              console.error('重新加载VPS数据失败:', loadError);
+              // 加载失败时不影响主流程，已有本地更新作为备份
+            }
             
             // 重新生成当前月账单
             this.generateMonthlyBill();
@@ -1252,11 +1277,6 @@ createApp({
     // 批量添加VPS
     async batchAddVps() {
       try {
-        if (!window.electronAPI) {
-          console.error('electronAPI未定义');
-          return;
-        }
-        
         // 初始化批量添加VPS列表
         this.batchVpsList = [this.createEmptyBatchRow()];
         
@@ -1407,64 +1427,13 @@ createApp({
             // 清空表格
             this.batchVpsList = [this.createEmptyBatchRow()];
             
-            // 重新加载VPS数据
-            this.loadVpsDataList();
-            
-            // 重新生成当前月账单
-            this.generateMonthlyBill();
-          } else {
-            console.error('批量添加VPS失败:', result.message || result.error);
-            alert('批量添加VPS失败: ' + (result.message || result.error || '未知错误'));
-          }
-        }
-      } catch (error) {
-        console.error('批量添加VPS失败:', error);
-        alert('批量添加VPS失败: ' + (error.message || '未知错误'));
-      }
-    },
-    
-    // 处理批量添加VPS (旧的JSON处理方法，保留作为参考)
-    async processBatchVps() {
-      try {
-        // 检查输入
-        if (!this.batchVpsData.trim()) {
-          alert('请输入要批量添加的VPS数据');
-          return;
-        }
-        
-        // 解析输入的数据
-        let vpsList = [];
-        try {
-          // 尝试解析为JSON数组
-          vpsList = JSON.parse(this.batchVpsData);
-          
-          // 检查是否为数组
-          if (!Array.isArray(vpsList)) {
-            alert('输入数据格式不正确，请确保是有效的JSON数组');
-            return;
-          }
-        } catch (parseError) {
-          console.error('解析批量添加VPS数据失败:', parseError);
-          alert('解析批量添加VPS数据失败: ' + parseError.message);
-          return;
-        }
-        
-        // 确认是否继续
-        if (confirm(`确定要批量添加 ${vpsList.length} 台VPS吗？`)) {
-          const result = await window.electronAPI.batchAddVps(vpsList);
-          
-          if (result && result.success) {
-            console.log('批量添加VPS成功');
-            alert(`批量添加VPS成功!\n已添加: ${result.added}台\n失败: ${result.failed}台\n${result.errors && result.errors.length > 0 ? '错误: ' + result.errors.join('\n') : ''}`);
-            
-            // 关闭模态框
-            this.showBatchAddVpsModal = false;
-            
-            // 清空输入
-            this.batchVpsData = '';
-            
-            // 重新加载VPS数据
-            this.loadVpsDataList();
+            // 重新加载VPS数据列表，确保UI显示最新数据
+            try {
+              await this.loadVpsDataList();
+            } catch (loadError) {
+              console.error('重新加载VPS数据失败:', loadError);
+              // 加载失败时不影响主流程
+            }
             
             // 重新生成当前月账单
             this.generateMonthlyBill();
