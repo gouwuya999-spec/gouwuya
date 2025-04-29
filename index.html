@@ -2272,6 +2272,8 @@
             <thead>
               <tr>
                 <th>VPS名称</th>
+                <th>国家/地区</th>
+                <th>IP地址</th>
                 <th>是否使用NAT</th>
                 <th>使用状态</th>
                 <th v-if="monthlyBill['显示销毁时间列']">销毁时间</th>
@@ -2283,6 +2285,8 @@
             <tbody>
               <tr v-for="(row, index) in monthlyBill['账单行']" :key="index">
                 <td>{{ row['VPS名称'] }}</td>
+                <td>{{ row['国家/地区'] }}</td>
+                <td>{{ row['IP地址'] }}</td>
                 <td>{{ row['是否使用NAT'] }}</td>
                 <td>{{ row['使用状态'] }}</td>
                 <td v-if="monthlyBill['显示销毁时间列']">{{ row['销毁时间'] }}</td>
@@ -2291,14 +2295,14 @@
                 <td>${{ row['合计（$）'] }}</td>
               </tr>
               <tr v-if="monthlyBill['NAT费用'] > 0" class="total-row">
-                <td colspan="5" v-if="monthlyBill['显示销毁时间列']"></td>
-                <td colspan="4" v-else></td>
+                <td colspan="7" v-if="monthlyBill['显示销毁时间列']"></td>
+                <td colspan="6" v-else></td>
                 <td>NAT费用</td>
                 <td>${{ monthlyBill['NAT费用'] }}</td>
               </tr>
               <tr class="total-row">
-                <td colspan="5" v-if="monthlyBill['显示销毁时间列']"></td>
-                <td colspan="4" v-else></td>
+                <td colspan="7" v-if="monthlyBill['显示销毁时间列']"></td>
+                <td colspan="6" v-else></td>
                 <td>总计</td>
                 <td>${{ monthlyBill['月总费用'] || 0 }}</td>
               </tr>

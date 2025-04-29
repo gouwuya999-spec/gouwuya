@@ -760,28 +760,33 @@ class BillingManager:
             
             # 设置列宽
             worksheet.set_column('A:A', 12)  # VPS名称
-            worksheet.set_column('B:B', 15)  # 是否使用NAT
-            worksheet.set_column('C:C', 10)  # 使用状态
+            worksheet.set_column('B:B', 15)  # 国家/地区
+            worksheet.set_column('C:C', 15)  # IP地址
+            worksheet.set_column('D:D', 10)  # 是否使用NAT
+            worksheet.set_column('E:E', 10)  # 使用状态
             
             # 判断是否需要显示销毁时间列
             has_destroyed_vps = bill_data.get('显示销毁时间列', False)
             
             if has_destroyed_vps:
-                worksheet.set_column('D:D', 15)  # 销毁时间
-                worksheet.set_column('E:E', 20)  # 使用时长
-                worksheet.set_column('F:F', 15)  # 单价/月
-                worksheet.set_column('G:G', 15)  # 合计
+                worksheet.set_column('F:F', 15)  # 销毁时间
+                worksheet.set_column('G:G', 20)  # 使用时长
+                worksheet.set_column('H:H', 15)  # 单价/月
+                worksheet.set_column('I:I', 15)  # 合计
             else:
-                worksheet.set_column('D:D', 20)  # 使用时长
-                worksheet.set_column('E:E', 15)  # 单价/月
-                worksheet.set_column('F:F', 15)  # 合计
+                worksheet.set_column('F:F', 20)  # 使用时长
+                worksheet.set_column('G:G', 15)  # 单价/月
+                worksheet.set_column('H:H', 15)  # 合计
             
             # 写入标题
             title = f"{billing_year}年{billing_month}月账单详情"
-            worksheet.merge_range('A1:G1', title, header_format)
+            if has_destroyed_vps:
+                worksheet.merge_range('A1:I1', title, header_format)
+            else:
+                worksheet.merge_range('A1:H1', title, header_format)
             
             # 写入表头
-            headers = ['VPS名称', '是否使用NAT', '使用状态']
+            headers = ['VPS名称', '国家/地区', 'IP地址', '是否使用NAT', '使用状态']
             if has_destroyed_vps:
                 headers.append('销毁时间')
             headers.extend(['使用时长', '单价/月（$）', '合计（$）'])
@@ -817,31 +822,43 @@ class BillingManager:
                     current_cell_format = non_nat_format
                     current_money_format = non_nat_money_format
                 
+                # 从原始VPS数据中获取IP地址
+                vps_name = row['VPS名称']
+                ip_address = row.get('IP地址', '')
+                
                 worksheet.write(row_idx, 0, row['VPS名称'], current_cell_format)
-                worksheet.write(row_idx, 1, row['是否使用NAT'], current_cell_format)
-                worksheet.write(row_idx, 2, row['使用状态'], current_cell_format)
+                worksheet.write(row_idx, 1, row.get('国家/地区', ''), current_cell_format)
+                worksheet.write(row_idx, 2, ip_address, current_cell_format)
+                worksheet.write(row_idx, 3, row['是否使用NAT'], current_cell_format)
+                worksheet.write(row_idx, 4, row['使用状态'], current_cell_format)
                 
                 if has_destroyed_vps:
-                    worksheet.write(row_idx, 3, row.get('销毁时间', ''), current_cell_format)
+                    worksheet.write(row_idx, 5, row.get('销毁时间', ''), current_cell_format)
                     offset = 1
                 
-                worksheet.write(row_idx, 3 + offset, row['使用时长'], current_cell_format)
-                worksheet.write(row_idx, 4 + offset, row['单价/月（$）'], current_money_format)
-                worksheet.write(row_idx, 5 + offset, row['合计（$）'], current_money_format)
+                worksheet.write(row_idx, 5 + offset, row['使用时长'], current_cell_format)
+                worksheet.write(row_idx, 6 + offset, row['单价/月（$）'], current_money_format)
+                worksheet.write(row_idx, 7 + offset, row['合计（$）'], current_money_format)
                 
                 row_idx += 1
             
             # 写入NAT费用和总计
-            end_col = 6 if has_destroyed_vps else 5
+            end_col = 8 if has_destroyed_vps else 7
             
             # NAT费用
             nat_fee = bill_data.get('NAT费用', 0)
-            worksheet.merge_range(f'A{row_idx + 1}:E{row_idx + 1}', 'NAT费用', total_format)
+            if has_destroyed_vps:
+                worksheet.merge_range(f'A{row_idx + 1}:H{row_idx + 1}', 'NAT费用', total_format)
+            else:
+                worksheet.merge_range(f'A{row_idx + 1}:G{row_idx + 1}', 'NAT费用', total_format)
             worksheet.write(row_idx, end_col, nat_fee, total_format)
             
             # 总计
             total = bill_data.get('月总费用', 0)
-            worksheet.merge_range(f'A{row_idx + 2}:E{row_idx + 2}', '总计', total_format)
+            if has_destroyed_vps:
+                worksheet.merge_range(f'A{row_idx + 2}:H{row_idx + 2}', '总计', total_format)
+            else:
+                worksheet.merge_range(f'A{row_idx + 2}:G{row_idx + 2}', '总计', total_format)
             worksheet.write(row_idx + 1, end_col, total, total_format)
             
             # 保存工作簿
@@ -1782,10 +1799,13 @@ class BillingManager:
                         row_data = {
                             'VPS名称': vps_name,
                             '国家/地区': vps.get('country', ''),
+                            'IP地址': vps.get('ip_address', ''),
                             '使用状态': display_status,
+                            '销毁时间': display_cancel_date_str,
+                            '统计截止时间': f"{year}年{month_name}",
                             '使用时长': usage_str,
-                            '单价/月（$）': price_per_month,
-                            '合计（$）': total_price,
+                            '月单价': vps.get('price_per_month', 0),
+                            '总金额': total_price,
                             '是否使用NAT': '是' if use_nat else '否',
                             '购买日期': purchase_date_str,
                             '销毁时间': display_cancel_date_str,
@@ -1964,6 +1984,7 @@ class BillingManager:
                         bill_row = {
                             'VPS名称': vps.get('name', '未命名'),
                             '国家/地区': vps.get('country', ''),
+                            'IP地址': vps.get('ip_address', ''),
                             '使用状态': display_status,
                             '销毁时间': display_cancel_date,
                             '统计截止时间': f"{year}年{month_name}",
@@ -2094,7 +2115,7 @@ class BillingManager:
                         sheet_name = sheet_name[:31]
                     
                     # 创建表格
-                    columns = ["VPS名称", "使用状态", "使用时长", "单价", "合计（$）"]
+                    columns = ["VPS名称", "国家/地区", "IP地址", "是否使用NAT", "使用状态", "使用时长", "单价", "合计（$）"]
                     
                     # 创建DataFrame
                     month_df = pd.DataFrame(columns=columns)
@@ -2103,6 +2124,9 @@ class BillingManager:
                     for row in bill_data.get('账单行', []):
                         month_df = pd.concat([month_df, pd.DataFrame([{
                             'VPS名称': row.get('VPS名称', ''),
+                            '国家/地区': row.get('国家/地区', ''),
+                            'IP地址': row.get('IP地址', ''),
+                            '是否使用NAT': row.get('是否使用NAT', '否'),
                             '使用状态': row.get('使用状态', ''),
                             '使用时长': row.get('使用时长', ''),
                             '单价': row.get('月单价', 0),
@@ -2158,11 +2182,14 @@ class BillingManager:
                         cell.alignment = center_alignment
                     
                     # 设置列宽
-                    worksheet.column_dimensions['A'].width = 45  # VPS名称
-                    worksheet.column_dimensions['B'].width = 10  # 使用状态
-                    worksheet.column_dimensions['C'].width = 20  # 使用时长
-                    worksheet.column_dimensions['D'].width = 10  # 单价
-                    worksheet.column_dimensions['E'].width = 15  # 合计
+                    worksheet.column_dimensions['A'].width = 15  # VPS名称
+                    worksheet.column_dimensions['B'].width = 15  # 国家/地区
+                    worksheet.column_dimensions['C'].width = 15  # IP地址
+                    worksheet.column_dimensions['D'].width = 10  # 是否使用NAT
+                    worksheet.column_dimensions['E'].width = 10  # 使用状态
+                    worksheet.column_dimensions['F'].width = 15  # 使用时长
+                    worksheet.column_dimensions['G'].width = 10  # 单价
+                    worksheet.column_dimensions['H'].width = 15  # 合计
                     
                     # 设置数据行样式
                     for row in range(2, worksheet.max_row + 1):
@@ -2301,9 +2328,9 @@ class BillingManager:
                         has_destroy_time = bill.get('显示销毁时间列', False)
                         
                         if has_destroy_time:
-                            columns = ['VPS名称', '是否使用NAT', '使用状态', '销毁时间', '使用时长', '单价/月（$）', '合计（$）']
+                            columns = ['VPS名称', '国家/地区', 'IP地址', '是否使用NAT', '使用状态', '销毁时间', '使用时长', '单价/月（$）', '合计（$）']
                         else:
-                            columns = ['VPS名称', '是否使用NAT', '使用状态', '使用时长', '单价/月（$）', '合计（$）']
+                            columns = ['VPS名称', '国家/地区', 'IP地址', '是否使用NAT', '使用状态', '使用时长', '单价/月（$）', '合计（$）']
                         
                         # 创建DataFrame
                         month_df = pd.DataFrame(month_data, columns=columns)
@@ -2384,17 +2411,20 @@ class BillingManager:
                                 cell.border = header_border
                             
                             # 设置列宽
-                            sheet.column_dimensions['A'].width = 45  # VPS名称
-                            if '是否使用NAT' in month_df.columns:
-                                sheet.column_dimensions['B'].width = 15  # 是否使用NAT
-                                sheet.column_dimensions['C'].width = 10  # 使用状态
+                            sheet.column_dimensions['A'].width = 15  # VPS名称
+                            sheet.column_dimensions['B'].width = 15  # 国家/地区
+                            sheet.column_dimensions['C'].width = 15  # IP地址
+                            sheet.column_dimensions['D'].width = 10  # 是否使用NAT
+                            sheet.column_dimensions['E'].width = 10  # 使用状态
+                            col_offset = 0
+                            
+                            if has_destroy_time:
+                                sheet.column_dimensions['F'].width = 15  # 销毁时间
                                 col_offset = 1
-                                if has_destroy_time:
-                                    sheet.column_dimensions['D'].width = 15  # 销毁时间
-                                    col_offset += 1
-                                sheet.column_dimensions[chr(68 + col_offset)].width = 20  # 使用时长
-                                sheet.column_dimensions[chr(69 + col_offset)].width = 15  # 单价/月
-                                sheet.column_dimensions[chr(70 + col_offset)].width = 15  # 合计
+                            
+                            sheet.column_dimensions[chr(ord('F') + col_offset)].width = 15  # 使用时长
+                            sheet.column_dimensions[chr(ord('G') + col_offset)].width = 10  # 单价/月
+                            sheet.column_dimensions[chr(ord('H') + col_offset)].width = 10  # 合计
                             
                             # 设置数据行样式
                             for row in range(2, sheet.max_row + 1):

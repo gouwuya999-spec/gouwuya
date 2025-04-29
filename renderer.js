@@ -1037,16 +1037,22 @@ createApp({
     // 编辑VPS
     editVps(vps) {
       // 复制VPS数据到编辑对象，避免直接修改原对象
-      this.editingVps = JSON.parse(JSON.stringify(vps));
+      // 创建一个简单的浅拷贝来避免可能的循环引用问题
+      this.editingVps = Object.assign({}, vps);
       
       // 确保日期格式正确
       if (this.editingVps.purchase_date) {
-        // 将YYYY/MM/DD格式转换为YYYY-MM-DD
-        this.editingVps.purchase_date = this.editingVps.purchase_date.replace(/\//g, '-');
+        // 先确保日期格式标准化（添加前导零）
+        const formattedDate = this.formatDateInput(this.editingVps.purchase_date);
+        // 然后将YYYY/MM/DD格式转换为YYYY-MM-DD
+        this.editingVps.purchase_date = formattedDate.replace(/\//g, '-');
       }
       
       if (this.editingVps.cancel_date) {
-        this.editingVps.cancel_date = this.editingVps.cancel_date.replace(/\//g, '-');
+        // 先确保日期格式标准化
+        const formattedDate = this.formatDateInput(this.editingVps.cancel_date);
+        // 然后转换日期分隔符
+        this.editingVps.cancel_date = formattedDate.replace(/\//g, '-');
       }
       
       // 查找当前编辑的VPS索引
@@ -1058,15 +1064,18 @@ createApp({
     
     // 添加新VPS
     addNewVps() {
+      // 使用格式化的当前日期
+      const currentDate = this.formatDate(new Date());
+      
       // 重置编辑对象
       this.editingVps = {
         name: '',
-        purchase_date: this.formatDate(new Date()),
+        purchase_date: currentDate,
         use_nat: false,
         status: '在用',
         cancel_date: '',
         price_per_month: 20,
-        start_date: this.formatDate(new Date()),
+        start_date: currentDate,
         total_price: 0,
         usage_period: '',
         ip_address: '',
@@ -1097,6 +1106,15 @@ createApp({
         if (!this.editingVps.purchase_date) {
           alert('请输入购买日期');
           return;
+        }
+        
+        // 格式化日期输入
+        if (this.editingVps.purchase_date) {
+          this.editingVps.purchase_date = this.formatDateInput(this.editingVps.purchase_date);
+        }
+        
+        if (this.editingVps.cancel_date) {
+          this.editingVps.cancel_date = this.formatDateInput(this.editingVps.cancel_date);
         }
         
         // 验证购买日期格式
@@ -1140,8 +1158,25 @@ createApp({
           this.editingVps.start_date = this.editingVps.start_date.replace(/-/g, '/');
         }
         
+        // 创建一个干净的对象进行保存，移除可能导致序列化问题的属性
+        const vpsToSave = {
+          name: this.editingVps.name,
+          purchase_date: this.editingVps.purchase_date,
+          start_date: this.editingVps.start_date,
+          ip_address: this.editingVps.ip_address,
+          country: this.editingVps.country,
+          use_nat: this.editingVps.use_nat,
+          status: this.editingVps.status,
+          price_per_month: Number(this.editingVps.price_per_month)
+        };
+        
+        // 如果是销毁状态，添加销毁日期
+        if (this.editingVps.status === '销毁' && this.editingVps.cancel_date) {
+          vpsToSave.cancel_date = this.editingVps.cancel_date;
+        }
+        
         // 保存VPS数据
-        const result = await window.electronAPI.saveVps(this.editingVps);
+        const result = await window.electronAPI.saveVps(vpsToSave);
         
         if (result.success) {
           console.log('保存VPS成功:', result.data);
@@ -1244,6 +1279,27 @@ createApp({
       return [year, month, day].join('/');
     },
     
+    // 格式化用户输入的日期
+    formatDateInput(dateStr) {
+      if (!dateStr) return '';
+      
+      // 支持的日期格式: YYYY/M/D, YYYY-M-D
+      const separator = dateStr.includes('/') ? '/' : '-';
+      const parts = dateStr.split(separator);
+      
+      if (parts.length !== 3) return dateStr;
+      
+      const year = parts[0];
+      let month = parts[1];
+      let day = parts[2];
+      
+      // 为单数月份和日期添加前导零
+      if (month.length === 1) month = '0' + month;
+      if (day.length === 1) day = '0' + day;
+      
+      return [year, month, day].join(separator);
+    },
+    
     // 初始化示例数据
     async initSampleData() {
       try {
@@ -1290,9 +1346,12 @@ createApp({
     
     // 创建一个空的批量添加行
     createEmptyBatchRow() {
+      // 确保使用正确的日期格式
+      const currentDate = this.formatDate(new Date());
+      
       return {
         name: '',
-        purchase_date: this.formatDate(new Date()),
+        purchase_date: currentDate,
         use_nat: false,
         status: '在用',
         cancel_date: '',
@@ -1361,6 +1420,15 @@ createApp({
             alert(`第 ${i+1} 行的购买日期不能为空`);
             hasErrors = true;
             break;
+          }
+          
+          // 格式化日期输入
+          if (item.purchase_date) {
+            item.purchase_date = this.formatDateInput(item.purchase_date);
+          }
+          
+          if (item.cancel_date) {
+            item.cancel_date = this.formatDateInput(item.cancel_date);
           }
           
           // 验证购买日期格式
