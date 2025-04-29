@@ -1960,7 +1960,7 @@ ipcMain.handle('update-vps-prices', async () => {
   }
 });
 
-ipcMain.handle('save-monthly-bill-to-excel', async (event, year, month) => {
+ipcMain.handle('save-monthly-bill-to-excel', async (event, year, month, addNatStats) => {
   try {
     console.log(`导出${year}年${month}月账单到Excel`);
     
@@ -1980,14 +1980,21 @@ ipcMain.handle('save-monthly-bill-to-excel', async (event, year, month) => {
     const filePath = saveResult.filePath;
     
     // 调用Python脚本导出Excel
-    const pythonProcess = spawn('python', [
+    const pythonArgs = [
       '-u',  // 添加-u参数确保输出不被缓冲
       'billing_manager.py',
       '--action=save_monthly_billing_to_excel',
       `--output=${filePath}`,
       `--specific_year=${year}`,
       `--specific_month=${month}`
-    ]);
+    ];
+    
+    // 如果需要添加NAT统计表格，添加对应参数
+    if (addNatStats) {
+      pythonArgs.push('--add_nat_stats=true');
+    }
+    
+    const pythonProcess = spawn('python', pythonArgs);
     
     let result = '';
     let error = '';

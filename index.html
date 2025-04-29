@@ -1880,6 +1880,23 @@
     .add-server-button i {
       margin-right: 5px;
     }
+    
+    .checkbox-container {
+      display: inline-block;
+      margin-left: 15px;
+      vertical-align: middle;
+    }
+    
+    .checkbox-container input[type="checkbox"] {
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    
+    .checkbox-container label {
+      font-size: 14px;
+      vertical-align: middle;
+      color: #333;
+    }
   </style>
 </head>
 <body>
@@ -2267,6 +2284,10 @@
             <button @click="downloadCurrentMonthBill" class="action-button">
               <i class="fas fa-download"></i> 下载当前账单
             </button>
+            <div class="checkbox-container">
+              <input type="checkbox" id="add-nat-stats" v-model="addNatStats">
+              <label for="add-nat-stats">添加NAT使用统计表格</label>
+            </div>
           </div>
           <table class="bill-table">
             <thead>

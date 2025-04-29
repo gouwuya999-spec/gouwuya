@@ -74,9 +74,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('save-monthly-billing-to-excel');
   },
   // 添加单个月度账单导出功能
-  saveMonthlyBillToExcel: async (year, month) => {
-    console.log(`preload: 调用saveMonthlyBillToExcel ${year}/${month}`);
-    return await ipcRenderer.invoke('save-monthly-bill-to-excel', year, month);
+  saveMonthlyBillToExcel: async (year, month, addNatStats) => {
+    console.log(`preload: 调用saveMonthlyBillToExcel ${year}/${month}, addNatStats=${addNatStats}`);
+    return await ipcRenderer.invoke('save-monthly-bill-to-excel', year, month, addNatStats);
   },
   
   // VPS管理相关
@@ -167,7 +167,7 @@ window.electronAPI = {
   getMonthlyBill: (year, month) => ipcRenderer.invoke('get-monthly-bill', year, month),
   getMonthlyBillSummary: () => ipcRenderer.invoke('get-monthly-bill-summary'),
   saveMonthlyBillingToExcel: () => ipcRenderer.invoke('save-monthly-billing-to-excel'),
-  saveMonthlyBillToExcel: (year, month) => ipcRenderer.invoke('save-monthly-bill-to-excel', year, month),
+  saveMonthlyBillToExcel: (year, month, addNatStats) => ipcRenderer.invoke('save-monthly-bill-to-excel', year, month, addNatStats),
   getAllVps: () => ipcRenderer.invoke('get-all-vps'),
   saveVps: (vpsData) => ipcRenderer.invoke('save-vps', vpsData),
   deleteVps: (vpsName) => ipcRenderer.invoke('delete-vps', vpsName),

@@ -8,107 +8,63 @@ function generateId() {
 createApp({
   data() {
     return {
-      activeTab: 'servers',
       servers: [],
-      showAddServerModal: false,
-      showSSHTerminalModal: false,
-      appVersion: '加载中...',
+      vpsDataList: [],
+      connectingServer: null,
       newServer: {
         name: '',
         host: '',
-        port: 22,
-        username: '',
+        port: '22',
+        username: 'root',
         password: '',
         privateKeyPath: '',
         passphrase: ''
       },
-      // 页面加载状态
-      loading: false,
-      // 批量添加服务器相关变量
-      useBatchMode: false,
-      batchServers: [],
-      batchResults: [],
-      selectedServer: null,
-      isDeploying: false,
-      isTestingConnection: false,
-      isSupportingPrivateKey: true,
-      wireguardResult: null,
-      qrCodeImage: null,
-      connectionTestResult: null,
-      sshOutput: '',
-      sshCommand: '',
-      currentConnectedServer: null,
-      showDebugInfo: false,
-      // 存储找到的多个配置文件
-      foundConfigFiles: [],
-      // 当前选中的配置文件索引
-      currentConfigIndex: -1,
-      // 配置文件内容
+      editingServer: null,
+      editingServerIndex: -1,
+      showAddServerModal: false,
+      showSSHTerminal: false,
+      commandHistory: [],
+      commandHistoryIndex: -1,
+      terminalCommand: '',
+      terminalOutput: '',
+      currentServerId: null,
+      currentServerName: '',
+      activeConnection: null,
+      appVersion: '',
+      isSupportingPrivateKey: false,
+      showQRCodeModal: false,
+      currentQRCode: '',
+      wireguardConfigTitle: '',
       configContent: '',
-      // 是否显示配置文件内容
-      showConfigContent: true,
-      // 添加进度显示相关变量
-      deployProgress: {
-        percent: 0,
-        message: ''
-      },
-      // 添加客户端配置显示相关变量
-      clientConfigs: [],
-      // 状态栏信息
-      cursorPosition: '',
-      // 通知消息
-      notification: {
-        message: '',
-        type: 'info',
-        show: false
-      },
-      // 刷新按钮状态
-      isRefreshing: false,
-      // 月账单统计相关数据
-      selectedYear: new Date().getFullYear(),
-      selectedMonth: new Date().getMonth() + 1,
-      monthlyBill: {},
-      monthlyBillSummary: [],
-      // 可选年份列表
+      configFile: '',
+      showConfigModal: false,
+      activeTab: 'servers',
       availableYears: [],
-      // VPS编辑相关数据
-      vpsDataList: [],
-      showAddVpsModal: false,
+      currentYear: new Date().getFullYear(),
+      monthlyBill: {},
+      selectedYear: new Date().getFullYear(),
+      selectedMonth: new Date().getMonth() + 1, // 当前月份
+      monthlyBillSummary: [],
       editingVps: {
         name: '',
         purchase_date: '',
         use_nat: false,
         status: '在用',
         cancel_date: '',
-        price_per_month: 20,
-        start_date: '',
-        total_price: 0,
-        usage_period: '',
-        ip_address: '',
-        country: ''
+        price_per_month: 20
       },
+      showAddVpsModal: false,
       editingVpsIndex: -1,
-      // 修复未定义的属性
-      showFileEditButton: false,
-      currentEditingFile: '',
-      deployingServerId: null,
-      
-      // Wireguard peer管理相关数据
-      wireguardSelectedServer: '',
-      wireguardSelectedInstance: '',
+      useBatchMode: false,
+      batchServers: [],
+      isAddingBatchServers: false,
       wireguardInstances: [],
-      wireguardInstanceDetails: null,
-      wireguardLoading: false,
-      addingPeer: false,
-      peerResult: null,
-      viewingPeer: null,
-      viewPeerQrCode: null,
-      // 批量添加VPS相关数据
-      showBatchAddVpsModal: false,
-      batchVpsData: '',
+      selectedInstanceName: '',
+      instanceDetails: null,
       batchVpsList: [],
-      // IP地址检测相关变量
-      isDetectingIp: false
+      isDetectingIp: false,
+      addNatStats: true, // 新增NAT统计表格选项，默认为true
     };
   },
   
@@ -905,7 +861,7 @@ createApp({
         const month = this.monthlyBill['月份'];
         
         console.log(`下载${year}年${month}月账单`);
-        const result = await window.electronAPI.saveMonthlyBillToExcel(year, month);
+        const result = await window.electronAPI.saveMonthlyBillToExcel(year, month, this.addNatStats);
         
         if (result.success) {
           alert(`账单已保存到: ${result.filePath}`);
