@@ -20,17 +20,30 @@ def main():
         # 测试单月导出
         specific_year = 2025
         specific_month = 4
-        result = bm.save_monthly_billing_to_excel(output_file, specific_year=specific_year, specific_month=specific_month, add_nat_stats=True)
+        result = bm.save_monthly_billing_to_excel(output_file, specific_year=specific_year, specific_month=specific_month)
         
         if result:
             print(f"月账单统计文件已成功保存到: {abs_output_path}")
             if os.path.exists(abs_output_path):
                 print(f"文件确实存在，大小: {os.path.getsize(abs_output_path)} 字节")
-                print("NAT统计表格已添加到Excel文件中")
             else:
                 print(f"警告: 文件报告已保存，但在 {abs_output_path} 找不到文件")
         else:
             print("保存失败")
+            
+        # 测试多月汇总导出
+        output_file2 = 'test_monthly_summary_color.xlsx'
+        abs_output_path2 = os.path.abspath(output_file2)
+        result2 = bm.save_monthly_billing_to_excel(output_file2, start_year=2025)
+        
+        if result2:
+            print(f"月账单汇总文件已成功保存到: {abs_output_path2}")
+            if os.path.exists(abs_output_path2):
+                print(f"文件确实存在，大小: {os.path.getsize(abs_output_path2)} 字节")
+            else:
+                print(f"警告: 文件报告已保存，但在 {abs_output_path2} 找不到文件")
+        else:
+            print("月账单汇总保存失败")
     except Exception as e:
         print(f"发生错误: {str(e)}")
         traceback.print_exc()

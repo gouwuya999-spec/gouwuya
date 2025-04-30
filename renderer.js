@@ -8,63 +8,99 @@ function generateId() {
 createApp({
   data() {
     return {
+      activeTab: 'servers',
       servers: [],
-      vpsDataList: [],
-      connectingServer: null,
+      showAddServerModal: false,
+      showSSHTerminalModal: false,
+      appVersion: '加载中...',
       newServer: {
         name: '',
         host: '',
-        port: '22',
-        username: 'root',
+        port: 22,
+        username: '',
         password: '',
         privateKeyPath: '',
         passphrase: ''
       },
-      editingServer: null,
-      editingServerIndex: -1,
-      showAddServerModal: false,
-      showSSHTerminal: false,
-      commandHistory: [],
-      commandHistoryIndex: -1,
-      terminalCommand: '',
-      terminalOutput: '',
-      currentServerId: null,
-      currentServerName: '',
-      activeConnection: null,
-      appVersion: '',
-      isSupportingPrivateKey: false,
-      showQRCodeModal: false,
-      currentQRCode: '',
-      wireguardConfigTitle: '',
+      // 批量添加服务器相关变量
+      useBatchMode: false,
+      batchServers: [],
+      batchResults: [],
+      selectedServer: null,
+      isDeploying: false,
+      isTestingConnection: false,
+      isSupportingPrivateKey: true,
+      wireguardResult: null,
+      qrCodeImage: null,
+      connectionTestResult: null,
+      sshOutput: '',
+      sshCommand: '',
+      currentConnectedServer: null,
+      showDebugInfo: false,
+      // 存储找到的多个配置文件
+      foundConfigFiles: [],
+      // 当前选中的配置文件索引
+      currentConfigIndex: -1,
+      // 配置文件内容
       configContent: '',
-      configFile: '',
-      showConfigModal: false,
-      activeTab: 'servers',
-      availableYears: [],
-      currentYear: new Date().getFullYear(),
-      monthlyBill: {},
+      // 是否显示配置文件内容
+      showConfigContent: true,
+      // 添加进度显示相关变量
+      deployProgress: {
+        percent: 0,
+        message: ''
+      },
+      // 添加客户端配置显示相关变量
+      clientConfigs: [],
+      // 状态栏信息
+      cursorPosition: '',
+      // 通知消息
+      notification: null,
+      // 月账单统计相关数据
       selectedYear: new Date().getFullYear(),
-      selectedMonth: new Date().getMonth() + 1, // 当前月份
+      selectedMonth: new Date().getMonth() + 1,
+      monthlyBill: {},
       monthlyBillSummary: [],
+      // 可选年份列表
+      availableYears: [],
+      // VPS编辑相关数据
+      vpsDataList: [],
+      showAddVpsModal: false,
       editingVps: {
         name: '',
         purchase_date: '',
         use_nat: false,
         status: '在用',
         cancel_date: '',
-        price_per_month: 20
+        price_per_month: 20,
+        start_date: '',
+        total_price: 0,
+        usage_period: '',
+        ip_address: '',
+        country: ''
       },
-      showAddVpsModal: false,
       editingVpsIndex: -1,
-      useBatchMode: false,
-      batchServers: [],
-      isAddingBatchServers: false,
+      // 修复未定义的属性
+      showFileEditButton: false,
+      currentEditingFile: '',
+      deployingServerId: null,
+      
+      // Wireguard peer管理相关数据
+      wireguardSelectedServer: '',
+      wireguardSelectedInstance: '',
       wireguardInstances: [],
-      selectedInstanceName: '',
-      instanceDetails: null,
+      wireguardInstanceDetails: null,
+      wireguardLoading: false,
+      addingPeer: false,
+      peerResult: null,
+      viewingPeer: null,
+      viewPeerQrCode: null,
+      // 批量添加VPS相关数据
+      showBatchAddVpsModal: false,
+      batchVpsData: '',
       batchVpsList: [],
-      isDetectingIp: false,
-      addNatStats: true, // 新增NAT统计表格选项，默认为true
+      // IP地址检测相关变量
+      isDetectingIp: false
     };
   },
   
@@ -100,13 +136,6 @@ createApp({
   },
   
   methods: {
-    // 格式化日期为显示格式 (YYYY/MM/DD)
-    formatDateForDisplay(dateStr) {
-      if (!dateStr) return '';
-      // 同时支持横杠和斜杠格式的输入，输出统一为斜杠格式
-      return dateStr.replace(/-/g, '/');
-    },
-    
     // 获取应用版本号
     async getAppVersion() {
       try {
@@ -118,62 +147,6 @@ createApp({
         console.error('获取版本号失败:', error);
         this.appVersion = '未知';
       }
-    },
-    
-    // 刷新系统数据
-    async refreshData() {
-      console.log('刷新系统数据');
-      try {
-        // 设置刷新状态为true，激活动画
-        this.isRefreshing = true;
-        
-        // 显示加载中的提示
-        this.showNotification('正在刷新数据...', 'info');
-        
-        // 根据当前活动的标签页刷新不同的数据
-        if (this.activeTab === 'servers') {
-          // 刷新服务器列表
-          await this.loadServers();
-        } else if (this.activeTab === 'wireguard') {
-          // 刷新Wireguard实例
-          await this.loadWireguardInstances();
-          if (this.wireguardSelectedServer && this.wireguardSelectedInstance) {
-            await this.loadInstanceDetails();
-          }
-        } else if (this.activeTab === 'monthly-billing') {
-          // 刷新月账单数据
-          await this.loadMonthlyBillSummary();
-          await this.getCurrentMonthBill();
-        }
-        
-        // 刷新VPS数据列表 (无论在哪个标签页都可能需要)
-        await this.loadVpsDataList();
-        
-        // 显示刷新成功的提示
-        this.showNotification('数据刷新成功！', 'success');
-      } catch (error) {
-        console.error('刷新数据失败:', error);
-        this.showNotification('刷新数据失败: ' + (error.message || '未知错误'), 'error');
-      } finally {
-        // 无论成功或失败，最后都需要重置刷新状态
-        setTimeout(() => {
-          this.isRefreshing = false;
-        }, 500); // 延迟500ms后停止动画，让用户看到完整的旋转
-      }
-    },
-    
-    // 显示通知消息
-    showNotification(message, type = 'info') {
-      this.notification = {
-        message,
-        type,
-        show: true
-      };
-      
-      // 3秒后自动关闭通知
-      setTimeout(() => {
-        this.notification.show = false;
-      }, 3000);
     },
     
     // 加载已保存的服务器列表
@@ -861,7 +834,7 @@ createApp({
         const month = this.monthlyBill['月份'];
         
         console.log(`下载${year}年${month}月账单`);
-        const result = await window.electronAPI.saveMonthlyBillToExcel(year, month, this.addNatStats);
+        const result = await window.electronAPI.saveMonthlyBillToExcel(year, month);
         
         if (result.success) {
           alert(`账单已保存到: ${result.filePath}`);
@@ -993,22 +966,16 @@ createApp({
     // 编辑VPS
     editVps(vps) {
       // 复制VPS数据到编辑对象，避免直接修改原对象
-      // 创建一个简单的浅拷贝来避免可能的循环引用问题
-      this.editingVps = Object.assign({}, vps);
+      this.editingVps = JSON.parse(JSON.stringify(vps));
       
       // 确保日期格式正确
       if (this.editingVps.purchase_date) {
-        // 先确保日期格式标准化（添加前导零）
-        const formattedDate = this.formatDateInput(this.editingVps.purchase_date);
-        // 然后将YYYY/MM/DD格式转换为YYYY-MM-DD
-        this.editingVps.purchase_date = formattedDate.replace(/\//g, '-');
+        // 将YYYY/MM/DD格式转换为YYYY-MM-DD
+        this.editingVps.purchase_date = this.editingVps.purchase_date.replace(/\//g, '-');
       }
       
       if (this.editingVps.cancel_date) {
-        // 先确保日期格式标准化
-        const formattedDate = this.formatDateInput(this.editingVps.cancel_date);
-        // 然后转换日期分隔符
-        this.editingVps.cancel_date = formattedDate.replace(/\//g, '-');
+        this.editingVps.cancel_date = this.editingVps.cancel_date.replace(/\//g, '-');
       }
       
       // 查找当前编辑的VPS索引
@@ -1020,18 +987,15 @@ createApp({
     
     // 添加新VPS
     addNewVps() {
-      // 使用格式化的当前日期
-      const currentDate = this.formatDate(new Date());
-      
       // 重置编辑对象
       this.editingVps = {
         name: '',
-        purchase_date: currentDate,
+        purchase_date: '',
         use_nat: false,
         status: '在用',
         cancel_date: '',
         price_per_month: 20,
-        start_date: currentDate,
+        start_date: '',
         total_price: 0,
         usage_period: '',
         ip_address: '',
@@ -1060,37 +1024,25 @@ createApp({
         }
         
         if (!this.editingVps.purchase_date) {
-          alert('请输入购买日期');
+          alert('请选择购买日期');
           return;
         }
         
-        // 格式化日期输入
-        if (this.editingVps.purchase_date) {
-          this.editingVps.purchase_date = this.formatDateInput(this.editingVps.purchase_date);
-        }
-        
-        if (this.editingVps.cancel_date) {
-          this.editingVps.cancel_date = this.formatDateInput(this.editingVps.cancel_date);
-        }
-        
         // 验证购买日期格式
-        const purchaseDateRegex = /^\d{4}[-\/](0[1-9]|1[0-2])[-\/](0[1-9]|[12][0-9]|3[01])$/;
-        if (!purchaseDateRegex.test(this.editingVps.purchase_date)) {
-          alert('购买日期格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式');
+        if (this.editingVps.purchase_date && !this.isValidDateFormat(this.editingVps.purchase_date)) {
+          alert('购买日期格式不正确，请使用YYYY-MM-DD或YYYY/MM/DD格式');
           return;
         }
         
         if (this.editingVps.status === '销毁' && !this.editingVps.cancel_date) {
-          alert('请输入销毁时间');
+          alert('请选择销毁时间');
           return;
         }
         
         // 验证销毁日期格式
-        if (this.editingVps.cancel_date) {
-          if (!purchaseDateRegex.test(this.editingVps.cancel_date)) {
-            alert('销毁时间格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式');
-            return;
-          }
+        if (this.editingVps.cancel_date && !this.isValidDateFormat(this.editingVps.cancel_date)) {
+          alert('销毁时间格式不正确，请使用YYYY-MM-DD或YYYY/MM/DD格式');
+          return;
         }
         
         if (!this.editingVps.price_per_month || this.editingVps.price_per_month <= 0) {
@@ -1103,36 +1055,19 @@ createApp({
         
         // 将日期格式转换为YYYY/MM/DD
         if (this.editingVps.purchase_date) {
-          this.editingVps.purchase_date = this.editingVps.purchase_date.replace(/-/g, '/');
+          this.editingVps.purchase_date = this.formatDateToSystem(this.editingVps.purchase_date);
         }
         
         if (this.editingVps.cancel_date) {
-          this.editingVps.cancel_date = this.editingVps.cancel_date.replace(/-/g, '/');
+          this.editingVps.cancel_date = this.formatDateToSystem(this.editingVps.cancel_date);
         }
         
         if (this.editingVps.start_date) {
-          this.editingVps.start_date = this.editingVps.start_date.replace(/-/g, '/');
-        }
-        
-        // 创建一个干净的对象进行保存，移除可能导致序列化问题的属性
-        const vpsToSave = {
-          name: this.editingVps.name,
-          purchase_date: this.editingVps.purchase_date,
-          start_date: this.editingVps.start_date,
-          ip_address: this.editingVps.ip_address,
-          country: this.editingVps.country,
-          use_nat: this.editingVps.use_nat,
-          status: this.editingVps.status,
-          price_per_month: Number(this.editingVps.price_per_month)
-        };
-        
-        // 如果是销毁状态，添加销毁日期
-        if (this.editingVps.status === '销毁' && this.editingVps.cancel_date) {
-          vpsToSave.cancel_date = this.editingVps.cancel_date;
+          this.editingVps.start_date = this.formatDateToSystem(this.editingVps.start_date);
         }
         
         // 保存VPS数据
-        const result = await window.electronAPI.saveVps(vpsToSave);
+        const result = await window.electronAPI.saveVps(this.editingVps);
         
         if (result.success) {
           console.log('保存VPS成功:', result.data);
@@ -1148,14 +1083,6 @@ createApp({
           
           // 关闭弹窗
           this.showAddVpsModal = false;
-          
-          // 重新加载VPS数据列表，确保UI显示最新数据
-          try {
-            await this.loadVpsDataList();
-          } catch (loadError) {
-            console.error('重新加载VPS数据失败:', loadError);
-            // 加载失败时不影响主流程，已有本地更新作为备份
-          }
           
           // 重新生成当前月账单
           this.generateMonthlyBill();
@@ -1186,14 +1113,6 @@ createApp({
             // 更新本地数据
             this.vpsDataList = this.vpsDataList.filter(vps => vps.name !== vpsName);
             
-            // 重新加载VPS数据列表，确保UI显示最新数据
-            try {
-              await this.loadVpsDataList();
-            } catch (loadError) {
-              console.error('重新加载VPS数据失败:', loadError);
-              // 加载失败时不影响主流程，已有本地更新作为备份
-            }
-            
             // 重新生成当前月账单
             this.generateMonthlyBill();
           } else {
@@ -1222,7 +1141,55 @@ createApp({
       return total.toFixed(2);
     },
     
-    // 格式化日期为YYYY/MM/DD
+    // 验证日期格式是否为YYYY-MM-DD或YYYY/MM/DD
+    isValidDateFormat(dateStr) {
+      // 支持YYYY-MM-DD和YYYY/MM/DD两种格式
+      const regex = /^(\d{4})([-\/])(\d{1,2})\2(\d{1,2})$/;
+      if (!regex.test(dateStr)) {
+        return false;
+      }
+      
+      // 验证日期有效性
+      const parts = dateStr.split(/[-\/]/);
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+      
+      // 检查月和日的有效范围
+      if (month < 1 || month > 12) return false;
+      
+      const daysInMonth = new Date(year, month, 0).getDate();
+      if (day < 1 || day > daysInMonth) return false;
+      
+      return true;
+    },
+    
+    // 将日期格式转换为系统使用的YYYY/MM/DD格式
+    formatDateToSystem(dateStr) {
+      if (!dateStr) return '';
+      
+      // 如果已经是YYYY/MM/DD格式，直接返回
+      if (dateStr.includes('/')) {
+        // 确保月和日是两位数
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const year = parts[0];
+          let month = parts[1];
+          let day = parts[2];
+          
+          if (month.length === 1) month = '0' + month;
+          if (day.length === 1) day = '0' + day;
+          
+          return `${year}/${month}/${day}`;
+        }
+        return dateStr;
+      }
+      
+      // 将YYYY-MM-DD转换为YYYY/MM/DD
+      return dateStr.replace(/-/g, '/');
+    },
+    
+    // 格式化日期为YYYY-MM-DD
     formatDate(date) {
       const d = new Date(date);
       let month = '' + (d.getMonth() + 1);
@@ -1232,28 +1199,7 @@ createApp({
       if (month.length < 2) month = '0' + month;
       if (day.length < 2) day = '0' + day;
       
-      return [year, month, day].join('/');
-    },
-    
-    // 格式化用户输入的日期
-    formatDateInput(dateStr) {
-      if (!dateStr) return '';
-      
-      // 支持的日期格式: YYYY/M/D, YYYY-M-D
-      const separator = dateStr.includes('/') ? '/' : '-';
-      const parts = dateStr.split(separator);
-      
-      if (parts.length !== 3) return dateStr;
-      
-      const year = parts[0];
-      let month = parts[1];
-      let day = parts[2];
-      
-      // 为单数月份和日期添加前导零
-      if (month.length === 1) month = '0' + month;
-      if (day.length === 1) day = '0' + day;
-      
-      return [year, month, day].join(separator);
+      return [year, month, day].join('-');
     },
     
     // 初始化示例数据
@@ -1283,611 +1229,6 @@ createApp({
       } catch (error) {
         console.error('初始化示例数据失败:', error);
         alert('初始化示例数据失败: ' + (error.message || '未知错误'));
-      }
-    },
-    
-    // 批量添加VPS
-    async batchAddVps() {
-      try {
-        // 初始化批量添加VPS列表
-        this.batchVpsList = [this.createEmptyBatchRow()];
-        
-        // 显示批量添加VPS的模态框
-        this.showBatchAddVpsModal = true;
-      } catch (error) {
-        console.error('打开批量添加VPS模态框失败:', error);
-        alert('打开批量添加VPS模态框失败: ' + (error.message || '未知错误'));
-      }
-    },
-    
-    // 创建一个空的批量添加行
-    createEmptyBatchRow() {
-      // 确保使用正确的日期格式
-      const currentDate = this.formatDate(new Date());
-      
-      return {
-        name: '',
-        purchase_date: currentDate,
-        use_nat: false,
-        status: '在用',
-        cancel_date: '',
-        price_per_month: 20,
-        ip_address: '',
-        country: ''
-      };
-    },
-    
-    // 添加新行
-    addBatchRow() {
-      this.batchVpsList.push(this.createEmptyBatchRow());
-    },
-    
-    // 删除行
-    removeBatchItem(index) {
-      if (this.batchVpsList.length > 1) {
-        this.batchVpsList.splice(index, 1);
-      } else {
-        alert('至少保留一行数据');
-      }
-    },
-    
-    // 清空表格
-    clearBatchServers() {
-      if (confirm('确定要清空表格吗？')) {
-        this.batchServers = [{
-          name: '',
-          host: '',
-          port: 22,
-          username: 'root',
-          authType: 'password',
-          password: '',
-          privateKeyPath: ''
-        }];
-      }
-    },
-    
-    // 处理表格形式批量添加VPS
-    async processBatchTableVps() {
-      try {
-        // 验证输入
-        if (this.batchVpsList.length === 0) {
-          alert('请至少添加一条VPS数据');
-          return;
-        }
-        
-        // 验证日期格式的正则表达式
-        const dateRegex = /^\d{4}[-\/](0[1-9]|1[0-2])[-\/](0[1-9]|[12][0-9]|3[01])$/;
-        
-        // 验证每一行数据
-        const validatedList = [];
-        let hasErrors = false;
-        
-        for (let i = 0; i < this.batchVpsList.length; i++) {
-          const item = this.batchVpsList[i];
-          
-          // 检查必填字段
-          if (!item.name) {
-            alert(`第 ${i+1} 行的VPS名称不能为空`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (!item.purchase_date) {
-            alert(`第 ${i+1} 行的购买日期不能为空`);
-            hasErrors = true;
-            break;
-          }
-          
-          // 格式化日期输入
-          if (item.purchase_date) {
-            item.purchase_date = this.formatDateInput(item.purchase_date);
-          }
-          
-          if (item.cancel_date) {
-            item.cancel_date = this.formatDateInput(item.cancel_date);
-          }
-          
-          // 验证购买日期格式
-          if (!dateRegex.test(item.purchase_date)) {
-            alert(`第 ${i+1} 行的购买日期格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (item.status === '销毁' && !item.cancel_date) {
-            alert(`第 ${i+1} 行的状态为销毁，但未填写销毁时间`);
-            hasErrors = true;
-            break;
-          }
-          
-          // 验证销毁日期格式
-          if (item.status === '销毁' && item.cancel_date && !dateRegex.test(item.cancel_date)) {
-            alert(`第 ${i+1} 行的销毁时间格式不正确，请使用YYYY/MM/DD或YYYY-MM-DD格式`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (!item.price_per_month || item.price_per_month <= 0) {
-            alert(`第 ${i+1} 行的单价必须大于0`);
-            hasErrors = true;
-            break;
-          }
-          
-          // 创建新的VPS对象
-          const vpsItem = {
-            name: item.name,
-            purchase_date: item.purchase_date.replace(/-/g, '/'),  // 转换日期格式为 YYYY/MM/DD
-            start_date: item.purchase_date.replace(/-/g, '/'),     // 设置start_date与purchase_date相同
-            use_nat: item.use_nat,
-            status: item.status,
-            price_per_month: parseFloat(item.price_per_month),
-            ip_address: item.ip_address || '',
-            country: item.country || ''
-          };
-          
-          // 如果状态为销毁且有销毁时间，添加cancel_date
-          if (item.status === '销毁' && item.cancel_date) {
-            vpsItem.cancel_date = item.cancel_date.replace(/-/g, '/');  // 转换日期格式
-          }
-          
-          validatedList.push(vpsItem);
-        }
-        
-        if (hasErrors) {
-          return;
-        }
-        
-        // 确认是否继续
-        if (confirm(`确定要批量添加 ${validatedList.length} 台VPS吗？`)) {
-          const result = await window.electronAPI.batchAddVps(validatedList);
-          
-          if (result && result.success) {
-            console.log('批量添加VPS成功');
-            alert(`批量添加VPS成功!\n已添加: ${result.added}台\n失败: ${result.failed}台\n${result.errors && result.errors.length > 0 ? '错误: ' + result.errors.join('\n') : ''}`);
-            
-            // 关闭模态框
-            this.showBatchAddVpsModal = false;
-            
-            // 清空表格
-            this.batchVpsList = [this.createEmptyBatchRow()];
-            
-            // 重新加载VPS数据列表，确保UI显示最新数据
-            try {
-              await this.loadVpsDataList();
-            } catch (loadError) {
-              console.error('重新加载VPS数据失败:', loadError);
-              // 加载失败时不影响主流程
-            }
-            
-            // 重新生成当前月账单
-            this.generateMonthlyBill();
-          } else {
-            console.error('批量添加VPS失败:', result.message || result.error);
-            alert('批量添加VPS失败: ' + (result.message || result.error || '未知错误'));
-          }
-        }
-      } catch (error) {
-        console.error('批量添加VPS失败:', error);
-        alert('批量添加VPS失败: ' + (error.message || '未知错误'));
-      }
-    },
-    
-    // Wireguard peer管理相关方法
-    async deployWireguard(serverId) {
-      if (!serverId) return;
-      
-      try {
-        this.isDeploying = true;
-        this.deployingServerId = serverId;
-        this.wireguardResult = null;
-        this.deployProgress = { percent: 0, message: '准备部署Wireguard...' };
-        
-        const result = await window.electronAPI.deployWireguard(serverId);
-        console.log('Wireguard部署结果:', result);
-        
-        this.wireguardResult = result;
-        
-        if (result.success && result.clientConfigs && result.clientConfigs.length > 0) {
-          this.clientConfigs = result.clientConfigs;
-          this.showConfigFile(0);
-        }
-        
-        // 刷新实例列表
-        if (result.success) {
-          await this.loadWireguardInstances();
-        }
-      } catch (error) {
-        console.error('部署Wireguard失败:', error);
-        this.wireguardResult = {
-          success: false,
-          error: error.message || '未知错误'
-        };
-      } finally {
-        this.isDeploying = false;
-      }
-    },
-    
-    async loadWireguardInstances() {
-      if (!this.wireguardSelectedServer) return;
-      
-      try {
-        this.wireguardLoading = true;
-        this.wireguardInstances = [];
-        this.wireguardInstanceDetails = null;
-        this.wireguardSelectedInstance = '';
-        // 清除所有相关状态，确保切换VPS后不会显示前一个VPS的配置
-        this.viewingPeer = null;
-        this.viewPeerQrCode = null;
-        this.peerResult = null;
-        
-        const result = await window.electronAPI.getWireguardInstances(this.wireguardSelectedServer);
-        console.log('Wireguard实例列表:', result);
-        
-        if (result.success) {
-          this.wireguardInstances = result.instances || [];
-          
-          // 如果只有一个实例，自动选择它
-          if (this.wireguardInstances.length === 1) {
-            this.wireguardSelectedInstance = this.wireguardInstances[0];
-            await this.loadInstanceDetails();
-          }
-        } else {
-          console.error('获取Wireguard实例失败:', result.error);
-          alert('获取Wireguard实例失败: ' + result.error);
-        }
-      } catch (error) {
-        console.error('加载Wireguard实例列表失败:', error);
-        alert('加载Wireguard实例列表失败: ' + (error.message || '未知错误'));
-      } finally {
-        this.wireguardLoading = false;
-      }
-    },
-    
-    async loadInstanceDetails() {
-      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) return;
-      
-      try {
-        this.wireguardLoading = true;
-        this.wireguardInstanceDetails = null;
-        // 清除所有相关状态，确保切换实例后不会显示前一个实例的配置
-        this.viewingPeer = null;
-        this.viewPeerQrCode = null;
-        this.peerResult = null;
-        
-        const result = await window.electronAPI.getWireguardInstanceDetails(
-          this.wireguardSelectedServer, 
-          this.wireguardSelectedInstance
-        );
-        console.log('Wireguard实例详情:', result);
-        
-        if (result.success) {
-          this.wireguardInstanceDetails = result.details;
-        } else {
-          console.error('获取Wireguard实例详情失败:', result.error);
-          alert('获取Wireguard实例详情失败: ' + result.error);
-        }
-      } catch (error) {
-        console.error('加载Wireguard实例详情失败:', error);
-        alert('加载Wireguard实例详情失败: ' + (error.message || '未知错误'));
-      } finally {
-        this.wireguardLoading = false;
-      }
-    },
-    
-    async addPeer() {
-      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) return;
-      
-      try {
-        this.addingPeer = true;
-        this.peerResult = null;
-        
-        const result = await window.electronAPI.addWireguardPeer(
-          this.wireguardSelectedServer,
-          this.wireguardSelectedInstance
-        );
-        console.log('添加Peer结果:', result);
-        
-        this.peerResult = result;
-        
-        if (result.success) {
-          // 刷新实例详情
-          await this.loadInstanceDetails();
-        }
-      } catch (error) {
-        console.error('添加Peer失败:', error);
-        this.peerResult = {
-          success: false,
-          error: error.message || '未知错误'
-        };
-      } finally {
-        this.addingPeer = false;
-      }
-    },
-    
-    async deletePeer(peerNumber) {
-      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) return;
-      
-      if (!confirm(`确定要删除Peer ${peerNumber}吗？此操作不可恢复！`)) {
-        return;
-      }
-      
-      try {
-        this.addingPeer = true;
-        this.peerResult = null;
-        
-        const result = await window.electronAPI.deleteWireguardPeer(
-          this.wireguardSelectedServer,
-          this.wireguardSelectedInstance,
-          peerNumber
-        );
-        console.log('删除Peer结果:', result);
-        
-        this.peerResult = result;
-        
-        if (result.success) {
-          // 刷新实例详情
-          await this.loadInstanceDetails();
-        }
-      } catch (error) {
-        console.error('删除Peer失败:', error);
-        this.peerResult = {
-          success: false,
-          error: error.message || '未知错误'
-        };
-      } finally {
-        this.addingPeer = false;
-      }
-    },
-    
-    async viewPeerConfig(peer) {
-      this.viewingPeer = peer;
-      this.viewPeerQrCode = null;
-      
-      try {
-        // 生成二维码
-        const result = await window.electronAPI.generateQRCode(peer.config);
-        if (result.success) {
-          this.viewPeerQrCode = result.qrCodeImage;
-        }
-      } catch (error) {
-        console.error('生成二维码失败:', error);
-      }
-    },
-    
-    // 导出表格数据为JSON文件
-    exportBatchTable() {
-      try {
-        if (this.batchVpsList.length === 0) {
-          alert('表格为空，无法导出');
-          return;
-        }
-        
-        // 创建导出数据
-        const exportData = JSON.stringify(this.batchVpsList, null, 2);
-        
-        // 创建下载链接
-        const blob = new Blob([exportData], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        // 创建下载链接并点击
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `批量添加VPS_${this.formatDate(new Date())}.json`;
-        document.body.appendChild(a);
-        a.click();
-        
-        // 清理
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 0);
-        
-      } catch (error) {
-        console.error('导出表格数据失败:', error);
-        alert('导出表格数据失败: ' + (error.message || '未知错误'));
-      }
-    },
-    
-    // 导入表格
-    importBatchTable() {
-      // 触发文件选择
-      this.$refs.fileInput.click();
-    },
-    
-    // 文件选择处理
-    onFileSelected(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result);
-          
-          // 验证数据是否为数组
-          if (!Array.isArray(data)) {
-            alert('导入的数据格式不正确，请确保是有效的JSON数组');
-            return;
-          }
-          
-          // 验证每个对象的格式
-          let isValid = true;
-          for (const item of data) {
-            if (!item.name || !item.purchase_date || item.price_per_month === undefined) {
-              isValid = false;
-              break;
-            }
-          }
-          
-          if (!isValid) {
-            alert('导入的数据格式不正确，请确保每条记录都包含必要的字段');
-            return;
-          }
-          
-          // 确认是否替换当前表格数据
-          if (this.batchVpsList.length > 0 && !confirm('是否要替换当前表格数据？')) {
-            return;
-          }
-          
-          // 格式化日期，从YYYY/MM/DD转为YYYY-MM-DD (如果需要)
-          const formattedData = data.map(item => ({
-            ...item,
-            purchase_date: item.purchase_date.replace(/\//g, '-'),
-            cancel_date: item.cancel_date ? item.cancel_date.replace(/\//g, '-') : ''
-          }));
-          
-          // 更新表格数据
-          this.batchVpsList = formattedData;
-          
-          // 清空文件输入
-          this.$refs.fileInput.value = '';
-          
-          alert(`已成功导入 ${formattedData.length} 条数据`);
-        } catch (error) {
-          console.error('解析导入文件失败:', error);
-          alert('解析导入文件失败: ' + (error.message || '未知错误'));
-        }
-      };
-      
-      reader.onerror = () => {
-        alert('读取文件失败');
-      };
-      
-      reader.readAsText(file);
-    },
-    
-    // 批量添加服务器相关方法
-    addBatchServerRow() {
-      this.batchServers.push({
-        name: '',
-        host: '',
-        port: 22,
-        username: 'root',
-        authType: 'password',
-        password: '',
-        privateKeyPath: ''
-      });
-    },
-    
-    removeBatchServer(index) {
-      if (this.batchServers.length > 1) {
-        this.batchServers.splice(index, 1);
-      } else {
-        alert('至少保留一行数据');
-      }
-    },
-    
-    async saveBatchServers() {
-      try {
-        if (!window.electronAPI) {
-          throw new Error('electronAPI未定义');
-        }
-        
-        // 验证输入
-        if (this.batchServers.length === 0) {
-          alert('请至少添加一条服务器数据');
-          return;
-        }
-        
-        // 验证每一行数据
-        const validatedList = [];
-        let hasErrors = false;
-        
-        for (let i = 0; i < this.batchServers.length; i++) {
-          const server = this.batchServers[i];
-          
-          // 检查必填字段
-          if (!server.name) {
-            alert(`第 ${i+1} 行的服务器名称不能为空`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (!server.host) {
-            alert(`第 ${i+1} 行的主机地址不能为空`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (!server.username) {
-            alert(`第 ${i+1} 行的用户名不能为空`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (server.authType === 'password' && !server.password) {
-            alert(`第 ${i+1} 行选择了密码认证，但未填写密码`);
-            hasErrors = true;
-            break;
-          }
-          
-          if (server.authType === 'privateKey' && !server.privateKeyPath) {
-            alert(`第 ${i+1} 行选择了私钥认证，但未填写私钥路径`);
-            hasErrors = true;
-            break;
-          }
-          
-          // 创建服务器对象
-          const serverData = {
-            id: generateId(),
-            name: server.name,
-            host: server.host,
-            port: parseInt(server.port) || 22,
-            username: server.username
-          };
-          
-          if (server.authType === 'password') {
-            serverData.password = server.password;
-          } else {
-            serverData.privateKeyPath = server.privateKeyPath;
-          }
-          
-          validatedList.push(serverData);
-        }
-        
-        if (hasErrors) {
-          return;
-        }
-        
-        // 保存所有服务器
-        this.batchResults = [];
-        
-        for (const serverData of validatedList) {
-          try {
-            const result = await window.electronAPI.saveServer(serverData);
-            
-            if (result.success) {
-              this.servers.push(serverData);
-              this.batchResults.push({
-                name: serverData.name,
-                success: true,
-                message: '添加成功'
-              });
-            } else {
-              this.batchResults.push({
-                name: serverData.name,
-                success: false,
-                message: `添加失败: ${result.error || '未知错误'}`
-              });
-            }
-          } catch (error) {
-            this.batchResults.push({
-              name: serverData.name,
-              success: false,
-              message: `添加失败: ${error.message || '未知错误'}`
-            });
-          }
-        }
-        
-        // 如果全部成功，清空表格
-        const allSuccess = this.batchResults.every(result => result.success);
-        if (allSuccess) {
-          this.batchServers = [];
-        }
-      } catch (error) {
-        console.error('批量保存服务器失败:', error);
-        alert('批量保存服务器失败: ' + (error.message || '未知错误'));
       }
     },
     
@@ -2239,113 +1580,159 @@ createApp({
       }
     },
     
-    // 处理表格粘贴
-    async handleTablePaste(event) {
+    // 批量添加VPS
+    async batchAddVps() {
       try {
-        let clipboardText = '';
-        
-        // 如果是粘贴事件
-        if (event && event.clipboardData) {
-          clipboardText = event.clipboardData.getData('text');
-          // 阻止默认行为
-          event.preventDefault();
-        } 
-        // 尝试使用现代剪贴板API直接读取
-        else if (navigator.clipboard && navigator.clipboard.readText) {
-          try {
-            clipboardText = await navigator.clipboard.readText();
-          } catch (clipError) {
-            console.error('无法直接访问剪贴板:', clipError);
-            // 如果直接访问失败，回退到提示输入
-            clipboardText = prompt('请将从Excel、Google表格或其他电子表格中复制的数据粘贴到此处：');
-          }
-        } else {
-          // 浏览器不支持Clipboard API，回退到提示输入
-          clipboardText = prompt('请将从Excel、Google表格或其他电子表格中复制的数据粘贴到此处：');
-        }
-        
-        if (!clipboardText) return;
-        
-        // 按换行符分割成行
-        const rows = clipboardText.split('\n').filter(row => row.trim());
-        
-        if (rows.length === 0) {
-          alert('未检测到有效数据');
+        if (!window.electronAPI) {
+          console.error('electronAPI未定义');
           return;
         }
         
-        // 清空当前表格，保留一行如果用户想要保留现有数据
-        if (this.batchVpsList.length > 0 && confirm('是否清空当前表格数据？')) {
-          this.batchVpsList = [];
+        // 初始化批量添加VPS列表
+        this.batchVpsList = [this.createEmptyBatchRow()];
+        
+        // 显示批量添加VPS的模态框
+        this.showBatchAddVpsModal = true;
+      } catch (error) {
+        console.error('打开批量添加VPS模态框失败:', error);
+        alert('打开批量添加VPS模态框失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 创建一个空的批量添加行
+    createEmptyBatchRow() {
+      return {
+        name: '',
+        purchase_date: '',
+        use_nat: false,
+        status: '在用',
+        cancel_date: '',
+        price_per_month: 20,
+        ip_address: '',
+        country: ''
+      };
+    },
+    
+    // 添加新行
+    addBatchRow() {
+      this.batchVpsList.push(this.createEmptyBatchRow());
+    },
+    
+    // 删除行
+    removeBatchItem(index) {
+      if (this.batchVpsList.length > 1) {
+        this.batchVpsList.splice(index, 1);
+      } else {
+        alert('至少保留一行数据');
+      }
+    },
+    
+    // 处理表格形式批量添加VPS
+    async processBatchTableVps() {
+      try {
+        // 验证输入
+        if (this.batchVpsList.length === 0) {
+          alert('请至少添加一条VPS数据');
+          return;
         }
         
-        // 处理每一行数据
-        rows.forEach(row => {
-          // 首先尝试按制表符分割（从Excel复制的标准格式）
-          let columns = row.split('\t').map(col => col.trim());
-          
-          // 如果只有一列，尝试按逗号分割（CSV格式）
-          if (columns.length <= 1) {
-            columns = row.split(',').map(col => col.trim());
-          }
-          
-          // 如果只有一列，尝试按空格分割（但要注意保留多个连续空格作为一个分隔符）
-          if (columns.length <= 1) {
-            columns = row.split(/\s{2,}/).map(col => col.trim()).filter(col => col);
-          }
-          
-          if (columns.length >= 2) { // 至少需要名称和日期
-            const vpsItem = this.createEmptyBatchRow();
-            
-            // 根据列的数量和位置填充数据
-            if (columns.length >= 1) vpsItem.name = columns[0];
-            if (columns.length >= 2) {
-              // 处理日期格式
-              const dateStr = columns[1];
-              if (dateStr) {
-                vpsItem.purchase_date = dateStr.replace(/[-\.]/g, '/');
-              }
-            }
-            if (columns.length >= 3) vpsItem.ip_address = columns[2];
-            if (columns.length >= 4) vpsItem.country = columns[3];
-            if (columns.length >= 5) {
-              const natValue = columns[4].toLowerCase();
-              vpsItem.use_nat = natValue === '是' || natValue === 'true' || natValue === '1' || natValue === 'yes';
-            }
-            if (columns.length >= 6) {
-              const statusValue = columns[5];
-              vpsItem.status = statusValue === '销毁' ? '销毁' : '在用';
-            }
-            if (columns.length >= 7) {
-              const cancelDate = columns[6];
-              if (cancelDate && cancelDate !== '-') {
-                vpsItem.cancel_date = cancelDate.replace(/[-\.]/g, '/');
-              }
-            }
-            if (columns.length >= 8) {
-              // 处理价格，去除任何非数字和小数点的字符（如$符号）
-              const priceStr = columns[7].replace(/[^\d.]/g, '');
-              const price = parseFloat(priceStr);
-              if (!isNaN(price)) vpsItem.price_per_month = price;
-            }
-            
-            this.batchVpsList.push(vpsItem);
-          }
-        });
+        // 验证每一行数据
+        const validatedList = [];
+        let hasErrors = false;
         
-        if (this.batchVpsList.length === 0) {
-          this.batchVpsList = [this.createEmptyBatchRow()];
-          alert('解析数据失败，请确保复制的数据格式正确。数据应包含至少VPS名称和购买日期两列。');
-        } else {
-          alert(`成功解析 ${this.batchVpsList.length} 行数据，请检查数据是否正确填充到表格中。`);
+        for (let i = 0; i < this.batchVpsList.length; i++) {
+          const item = this.batchVpsList[i];
+          
+          // 检查必填字段
+          if (!item.name) {
+            alert(`第 ${i+1} 行的VPS名称不能为空`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (!item.purchase_date) {
+            alert(`第 ${i+1} 行的购买日期不能为空`);
+            hasErrors = true;
+            break;
+          }
+          
+          // 验证购买日期格式
+          if (item.purchase_date && !this.isValidDateFormat(item.purchase_date)) {
+            alert(`第 ${i+1} 行的购买日期格式不正确，请使用YYYY-MM-DD或YYYY/MM/DD格式`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (item.status === '销毁' && !item.cancel_date) {
+            alert(`第 ${i+1} 行的状态为销毁，但未填写销毁时间`);
+            hasErrors = true;
+            break;
+          }
+          
+          // 验证销毁日期格式
+          if (item.cancel_date && !this.isValidDateFormat(item.cancel_date)) {
+            alert(`第 ${i+1} 行的销毁时间格式不正确，请使用YYYY-MM-DD或YYYY/MM/DD格式`);
+            hasErrors = true;
+            break;
+          }
+          
+          if (!item.price_per_month || item.price_per_month <= 0) {
+            alert(`第 ${i+1} 行的单价必须大于0`);
+            hasErrors = true;
+            break;
+          }
+          
+          // 创建新的VPS对象
+          const vpsItem = {
+            name: item.name,
+            purchase_date: this.formatDateToSystem(item.purchase_date),  // 转换日期格式为 YYYY/MM/DD
+            start_date: this.formatDateToSystem(item.purchase_date),     // 设置start_date与purchase_date相同
+            use_nat: item.use_nat,
+            status: item.status,
+            price_per_month: parseFloat(item.price_per_month),
+            ip_address: item.ip_address || '',
+            country: item.country || ''
+          };
+          
+          // 如果状态为销毁且有销毁时间，添加cancel_date
+          if (item.status === '销毁' && item.cancel_date) {
+            vpsItem.cancel_date = this.formatDateToSystem(item.cancel_date);  // 转换日期格式
+          }
+          
+          validatedList.push(vpsItem);
+        }
+        
+        if (hasErrors) {
+          return;
+        }
+        
+        // 确认是否继续
+        if (confirm(`确定要批量添加 ${validatedList.length} 台VPS吗？`)) {
+          const result = await window.electronAPI.batchAddVps(validatedList);
+          
+          if (result && result.success) {
+            console.log('批量添加VPS成功');
+            alert(`批量添加VPS成功!\n已添加: ${result.added}台\n失败: ${result.failed}台\n${result.errors && result.errors.length > 0 ? '错误: ' + result.errors.join('\n') : ''}`);
+            
+            // 关闭模态框
+            this.showBatchAddVpsModal = false;
+            
+            // 清空表格
+            this.batchVpsList = [this.createEmptyBatchRow()];
+            
+            // 重新加载VPS数据
+            this.loadVpsDataList();
+            
+            // 重新生成当前月账单
+            this.generateMonthlyBill();
+          } else {
+            console.error('批量添加VPS失败:', result.message || result.error);
+            alert('批量添加VPS失败: ' + (result.message || result.error || '未知错误'));
+          }
         }
       } catch (error) {
-        console.error('处理粘贴数据失败:', error);
-        alert('处理粘贴数据失败: ' + (error.message || '未知错误'));
-        // 确保至少有一行空数据
-        if (this.batchVpsList.length === 0) {
-          this.batchVpsList = [this.createEmptyBatchRow()];
-        }
+        console.error('批量添加VPS失败:', error);
+        alert('批量添加VPS失败: ' + (error.message || '未知错误'));
       }
     },
   }

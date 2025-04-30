@@ -39,48 +39,6 @@
       align-items: center;
     }
     
-    .buttons-container {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-    }
-    
-    .refresh-button {
-      background-color: #2196F3;
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.3s;
-      display: flex;
-      align-items: center;
-      font-size: 14px;
-      font-weight: bold;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      margin-right: 10px;
-    }
-    
-    .refresh-button:hover {
-      background-color: #0b7dda;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-      transform: translateY(-2px);
-    }
-    
-    .refresh-button i {
-      margin-right: 5px;
-    }
-    
-    /* 刷新图标的旋转动画 */
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    .refresh-button i.spinning {
-      animation: spin 1s linear infinite;
-    }
-    
     .version-tag {
       font-size: 16px;
       color: #333;
@@ -1063,16 +1021,8 @@
     .server-selector, .instance-selector {
       margin-bottom: 20px;
       display: flex;
-      flex-direction: row;
       align-items: center;
       gap: 10px;
-      flex-wrap: nowrap;
-    }
-    
-    .server-selector label, .instance-selector label {
-      white-space: nowrap;
-      margin-bottom: 0;
-      margin-right: 10px;
     }
     
     .server-selector select, .instance-selector select {
@@ -1080,7 +1030,6 @@
       border-radius: 4px;
       border: 1px solid #ccc;
       min-width: 250px;
-      flex: 1;
     }
     
     .instance-details {
@@ -1782,152 +1731,24 @@
     .ip-location i {
       color: #e74c3c;
     }
-    
-    /* 添加刷新按钮样式 */
-    .server-selector button, .instance-selector button {
-      height: 36px;
-      min-width: 80px;
-      margin-left: 10px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 4px;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    
-    .server-selector button:hover, .instance-selector button:hover {
-      background-color: #45a049;
-    }
-    
-    .server-selector button:disabled, .instance-selector button:disabled {
-      background-color: #cccccc;
-      cursor: not-allowed;
-    }
-    
-    /* 通知样式 */
-    .notification {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 15px 20px;
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 9999;
-      display: flex;
-      align-items: center;
-      max-width: 350px;
-      animation: slideIn 0.3s ease-out forwards;
-    }
-    
-    @keyframes slideIn {
-      from {
-        transform: translateX(100%);
-        opacity: 0;
-      }
-      to {
-        transform: translateX(0);
-        opacity: 1;
-      }
-    }
-    
-    .notification.info {
-      background-color: #2196F3;
-      color: white;
-    }
-    
-    .notification.success {
-      background-color: #4CAF50;
-      color: white;
-    }
-    
-    .notification.error {
-      background-color: #f44336;
-      color: white;
-    }
-    
-    .notification i {
-      margin-right: 10px;
-      font-size: 18px;
-    }
-    
-    .add-server-button {
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.3s;
-      display: flex;
-      align-items: center;
-      font-size: 14px;
-      font-weight: bold;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      margin-right: 10px;
-    }
-    
-    .add-server-button:hover {
-      background-color: #45a049;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-      transform: translateY(-2px);
-    }
-    
-    .add-server-button i {
-      margin-right: 5px;
-    }
-    
-    .checkbox-container {
-      display: inline-block;
-      margin-left: 15px;
-      vertical-align: middle;
-    }
-    
-    .checkbox-container input[type="checkbox"] {
-      margin-right: 5px;
-      vertical-align: middle;
-    }
-    
-    .checkbox-container label {
-      font-size: 14px;
-      vertical-align: middle;
-      color: #333;
-    }
   </style>
 </head>
 <body>
   <div id="app" class="container">
-    <!-- 通知组件 -->
-    <div v-if="notification && notification.show" :class="['notification', notification.type]">
-      <i v-if="notification.type === 'info'" class="fas fa-info-circle"></i>
-      <i v-else-if="notification.type === 'success'" class="fas fa-check-circle"></i>
-      <i v-else-if="notification.type === 'error'" class="fas fa-exclamation-circle"></i>
-      {{ notification.message }}
-    </div>
-    
-    <div class="header">
-      <div class="app-title">
-        <h1>VPS管理系统</h1>
-      </div>
-      <div class="buttons-container">
-        <button v-if="activeTab === 'servers'" @click="openAddServerModal" class="add-server-button">
-          <i class="fas fa-plus"></i> 添加服务器
-        </button>
-        <button @click="refreshData" class="refresh-button">
-          <i class="fas fa-sync-alt" :class="{ 'spinning': isRefreshing }"></i> 刷新
-        </button>
-      </div>
-    </div>
-    
     <div v-if="!loading">
       <div class="tabs">
         <div class="tab" :class="{ active: activeTab === 'servers' }" @click="activeTab = 'servers'">服务器管理</div>
         <div class="tab" :class="{ active: activeTab === 'wireguard' }" @click="activeTab = 'wireguard'">Wireguard</div>
         <div class="tab" :class="{ active: activeTab === 'monthly-bill' }" @click="activeTab = 'monthly-bill'">月账单统计</div>
+      </div>
+      
+      <div class="header">
+        <div class="app-title">
+          <h1>VPS管理系统</h1>
+        </div>
+        <div>
+          <button v-if="activeTab === 'servers'" @click="openAddServerModal">添加服务器</button>
+        </div>
       </div>
       
       <div class="tab-content" :class="{ active: activeTab === 'servers' }">
@@ -2035,6 +1856,7 @@
               </option>
             </select>
             <button @click="loadWireguardInstances" :disabled="!wireguardSelectedServer">刷新</button>
+            <button @click="deployWireguard(wireguardSelectedServer)" :disabled="!wireguardSelectedServer" class="primary-button">部署新Wireguard</button>
           </div>
           
           <div v-if="wireguardLoading" class="loading-spinner">
@@ -2044,6 +1866,7 @@
           
           <div v-else-if="wireguardInstances.length === 0 && wireguardSelectedServer" class="no-instances">
             <p>未找到Wireguard实例，请先部署Wireguard</p>
+            <button @click="deployWireguard(wireguardSelectedServer)" class="primary-button">部署Wireguard</button>
           </div>
           
           <div v-else-if="wireguardInstances.length > 0" class="instances-list">
@@ -2284,17 +2107,11 @@
             <button @click="downloadCurrentMonthBill" class="action-button">
               <i class="fas fa-download"></i> 下载当前账单
             </button>
-            <div class="checkbox-container">
-              <input type="checkbox" id="add-nat-stats" v-model="addNatStats">
-              <label for="add-nat-stats">添加NAT使用统计表格</label>
-            </div>
           </div>
           <table class="bill-table">
             <thead>
               <tr>
                 <th>VPS名称</th>
-                <th>国家/地区</th>
-                <th>IP地址</th>
                 <th>是否使用NAT</th>
                 <th>使用状态</th>
                 <th v-if="monthlyBill['显示销毁时间列']">销毁时间</th>
@@ -2306,8 +2123,6 @@
             <tbody>
               <tr v-for="(row, index) in monthlyBill['账单行']" :key="index">
                 <td>{{ row['VPS名称'] }}</td>
-                <td>{{ row['国家/地区'] }}</td>
-                <td>{{ row['IP地址'] }}</td>
                 <td>{{ row['是否使用NAT'] }}</td>
                 <td>{{ row['使用状态'] }}</td>
                 <td v-if="monthlyBill['显示销毁时间列']">{{ row['销毁时间'] }}</td>
@@ -2316,14 +2131,14 @@
                 <td>${{ row['合计（$）'] }}</td>
               </tr>
               <tr v-if="monthlyBill['NAT费用'] > 0" class="total-row">
-                <td colspan="7" v-if="monthlyBill['显示销毁时间列']"></td>
-                <td colspan="6" v-else></td>
+                <td colspan="5" v-if="monthlyBill['显示销毁时间列']"></td>
+                <td colspan="4" v-else></td>
                 <td>NAT费用</td>
                 <td>${{ monthlyBill['NAT费用'] }}</td>
               </tr>
               <tr class="total-row">
-                <td colspan="7" v-if="monthlyBill['显示销毁时间列']"></td>
-                <td colspan="6" v-else></td>
+                <td colspan="5" v-if="monthlyBill['显示销毁时间列']"></td>
+                <td colspan="4" v-else></td>
                 <td>总计</td>
                 <td>${{ monthlyBill['月总费用'] || 0 }}</td>
               </tr>
@@ -2441,7 +2256,7 @@
             </div>
             
             <div class="batch-table">
-              <table class="wps-style-table" @paste="handleTablePaste($event)">
+              <table class="wps-style-table">
                 <thead>
                   <tr>
                     <th>服务器名称</th>
@@ -2559,7 +2374,7 @@
           
           <div class="form-group">
             <label>购买日期:</label>
-            <input type="text" v-model="editingVps.purchase_date" placeholder="格式: YYYY/MM/DD">
+            <input type="text" v-model="editingVps.purchase_date" placeholder="YYYY-MM-DD" title="购买日期，格式：YYYY-MM-DD">
           </div>
           
           <div class="form-group">
@@ -2600,7 +2415,7 @@
           
           <div class="form-group" v-if="editingVps.status === '销毁'">
             <label>销毁时间:</label>
-            <input type="text" v-model="editingVps.cancel_date" placeholder="格式: YYYY/MM/DD">
+            <input type="text" v-model="editingVps.cancel_date" placeholder="YYYY-MM-DD" title="销毁状态时必填，格式：YYYY-MM-DD">
           </div>
           
           <div class="form-group">
@@ -2638,7 +2453,7 @@
                 <tbody>
                   <tr v-for="(item, index) in batchVpsList" :key="index">
                     <td><input type="text" v-model="item.name" placeholder="VPS名称" style="width: 95%"></td>
-                    <td><input type="text" v-model="item.purchase_date" placeholder="格式: YYYY/MM/DD" style="width: 95%"></td>
+                    <td><input type="text" v-model="item.purchase_date" placeholder="YYYY-MM-DD" title="购买日期（格式：YYYY-MM-DD）" style="width: 95%"></td>
                     <td><input type="text" v-model="item.ip_address" placeholder="IP地址" style="width: 95%">
                       <button class="mini-button" @click="detectBatchVpsIp(index)" :disabled="isDetectingIp">检测</button>
                     </td>
@@ -2655,7 +2470,7 @@
                         <option value="销毁">销毁</option>
                       </select>
                     </td>
-                    <td><input type="text" v-model="item.cancel_date" placeholder="格式: YYYY/MM/DD" :disabled="item.status !== '销毁'" style="width: 95%"></td>
+                    <td><input type="text" v-model="item.cancel_date" :disabled="item.status !== '销毁'" placeholder="YYYY-MM-DD" title="销毁状态时为必填项" style="width: 95%"></td>
                     <td><input type="number" v-model="item.price_per_month" min="0" step="0.01" style="width: 95%"></td>
                     <td><button @click="removeBatchItem(index)" class="action-button danger-button">删除</button></td>
                   </tr>
@@ -2665,9 +2480,6 @@
           </div>
           <div class="modal-footer">
             <div class="button-row">
-              <button class="action-button info-button" @click="handleTablePaste" style="margin-right: 15px;">
-                <i class="fas fa-paste"></i> 粘贴数据
-              </button>
               <button class="action-button success-button" @click="addBatchRow" style="margin-right: 15px;">
                 <i class="fas fa-plus"></i> 添加行
               </button>
@@ -2683,14 +2495,6 @@
   </div>
   
   <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.js"></script>
-  <script>
-    // 添加格式化日期函数，使用斜杠分隔符
-    function formatDateForDisplay(dateStr) {
-      if (!dateStr) return '';
-      // 同时支持横杠和斜杠格式的输入，输出统一为斜杠格式
-      return dateStr.replace(/-/g, '/');
-    }
-  </script>
   <script src="renderer.js"></script>
 </body>
 </html> 

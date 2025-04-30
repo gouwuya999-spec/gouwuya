@@ -16,7 +16,6 @@ import locale
 import requests
 import time
 import xlsxwriter
-from openpyxl.styles import PatternFill, Alignment, Font, Color, Border, Side
 
 # 设置stdout为UTF-8编码
 if sys.stdout.encoding != 'utf-8':
@@ -761,33 +760,28 @@ class BillingManager:
             
             # 设置列宽
             worksheet.set_column('A:A', 12)  # VPS名称
-            worksheet.set_column('B:B', 15)  # 国家/地区
-            worksheet.set_column('C:C', 15)  # IP地址
-            worksheet.set_column('D:D', 10)  # 是否使用NAT
-            worksheet.set_column('E:E', 10)  # 使用状态
+            worksheet.set_column('B:B', 15)  # 是否使用NAT
+            worksheet.set_column('C:C', 10)  # 使用状态
             
             # 判断是否需要显示销毁时间列
             has_destroyed_vps = bill_data.get('显示销毁时间列', False)
             
             if has_destroyed_vps:
-                worksheet.set_column('F:F', 15)  # 销毁时间
-                worksheet.set_column('G:G', 20)  # 使用时长
-                worksheet.set_column('H:H', 15)  # 单价/月
-                worksheet.set_column('I:I', 15)  # 合计
+                worksheet.set_column('D:D', 15)  # 销毁时间
+                worksheet.set_column('E:E', 20)  # 使用时长
+                worksheet.set_column('F:F', 15)  # 单价/月
+                worksheet.set_column('G:G', 15)  # 合计
             else:
-                worksheet.set_column('F:F', 20)  # 使用时长
-                worksheet.set_column('G:G', 15)  # 单价/月
-                worksheet.set_column('H:H', 15)  # 合计
+                worksheet.set_column('D:D', 20)  # 使用时长
+                worksheet.set_column('E:E', 15)  # 单价/月
+                worksheet.set_column('F:F', 15)  # 合计
             
             # 写入标题
             title = f"{billing_year}年{billing_month}月账单详情"
-            if has_destroyed_vps:
-                worksheet.merge_range('A1:I1', title, header_format)
-            else:
-                worksheet.merge_range('A1:H1', title, header_format)
+            worksheet.merge_range('A1:G1', title, header_format)
             
             # 写入表头
-            headers = ['VPS名称', '国家/地区', 'IP地址', '是否使用NAT', '使用状态']
+            headers = ['VPS名称', '是否使用NAT', '使用状态']
             if has_destroyed_vps:
                 headers.append('销毁时间')
             headers.extend(['使用时长', '单价/月（$）', '合计（$）'])
@@ -823,43 +817,31 @@ class BillingManager:
                     current_cell_format = non_nat_format
                     current_money_format = non_nat_money_format
                 
-                # 从原始VPS数据中获取IP地址
-                vps_name = row['VPS名称']
-                ip_address = row.get('IP地址', '')
-                
                 worksheet.write(row_idx, 0, row['VPS名称'], current_cell_format)
-                worksheet.write(row_idx, 1, row.get('国家/地区', ''), current_cell_format)
-                worksheet.write(row_idx, 2, ip_address, current_cell_format)
-                worksheet.write(row_idx, 3, row['是否使用NAT'], current_cell_format)
-                worksheet.write(row_idx, 4, row['使用状态'], current_cell_format)
+                worksheet.write(row_idx, 1, row['是否使用NAT'], current_cell_format)
+                worksheet.write(row_idx, 2, row['使用状态'], current_cell_format)
                 
                 if has_destroyed_vps:
-                    worksheet.write(row_idx, 5, row.get('销毁时间', ''), current_cell_format)
+                    worksheet.write(row_idx, 3, row.get('销毁时间', ''), current_cell_format)
                     offset = 1
                 
-                worksheet.write(row_idx, 5 + offset, row['使用时长'], current_cell_format)
-                worksheet.write(row_idx, 6 + offset, row['单价/月（$）'], current_money_format)
-                worksheet.write(row_idx, 7 + offset, row['合计（$）'], current_money_format)
+                worksheet.write(row_idx, 3 + offset, row['使用时长'], current_cell_format)
+                worksheet.write(row_idx, 4 + offset, row['单价/月（$）'], current_money_format)
+                worksheet.write(row_idx, 5 + offset, row['合计（$）'], current_money_format)
                 
                 row_idx += 1
             
             # 写入NAT费用和总计
-            end_col = 8 if has_destroyed_vps else 7
+            end_col = 6 if has_destroyed_vps else 5
             
             # NAT费用
             nat_fee = bill_data.get('NAT费用', 0)
-            if has_destroyed_vps:
-                worksheet.merge_range(f'A{row_idx + 1}:H{row_idx + 1}', 'NAT费用', total_format)
-            else:
-                worksheet.merge_range(f'A{row_idx + 1}:G{row_idx + 1}', 'NAT费用', total_format)
+            worksheet.merge_range(f'A{row_idx + 1}:E{row_idx + 1}', 'NAT费用', total_format)
             worksheet.write(row_idx, end_col, nat_fee, total_format)
             
             # 总计
             total = bill_data.get('月总费用', 0)
-            if has_destroyed_vps:
-                worksheet.merge_range(f'A{row_idx + 2}:H{row_idx + 2}', '总计', total_format)
-            else:
-                worksheet.merge_range(f'A{row_idx + 2}:G{row_idx + 2}', '总计', total_format)
+            worksheet.merge_range(f'A{row_idx + 2}:E{row_idx + 2}', '总计', total_format)
             worksheet.write(row_idx + 1, end_col, total, total_format)
             
             # 保存工作簿
@@ -1800,13 +1782,10 @@ class BillingManager:
                         row_data = {
                             'VPS名称': vps_name,
                             '国家/地区': vps.get('country', ''),
-                            'IP地址': vps.get('ip_address', ''),
                             '使用状态': display_status,
-                            '销毁时间': display_cancel_date_str,
-                            '统计截止时间': f"{year}年{month_name}",
                             '使用时长': usage_str,
-                            '月单价': vps.get('price_per_month', 0),
-                            '总金额': total_price,
+                            '单价/月（$）': price_per_month,
+                            '合计（$）': total_price,
                             '是否使用NAT': '是' if use_nat else '否',
                             '购买日期': purchase_date_str,
                             '销毁时间': display_cancel_date_str,
@@ -1985,7 +1964,6 @@ class BillingManager:
                         bill_row = {
                             'VPS名称': vps.get('name', '未命名'),
                             '国家/地区': vps.get('country', ''),
-                            'IP地址': vps.get('ip_address', ''),
                             '使用状态': display_status,
                             '销毁时间': display_cancel_date,
                             '统计截止时间': f"{year}年{month_name}",
@@ -2071,7 +2049,7 @@ class BillingManager:
                 '错误': str(e)
             }
     
-    def save_monthly_billing_to_excel(self, output_file='月账单统计.xlsx', start_year=2024, specific_year=None, specific_month=None, add_nat_stats=False):
+    def save_monthly_billing_to_excel(self, output_file='月账单统计.xlsx', start_year=2024, specific_year=None, specific_month=None):
         """
         将月账单统计保存到Excel
         
@@ -2080,7 +2058,6 @@ class BillingManager:
             start_year (int): 起始年份
             specific_year (int, optional): 指定年份，如果提供则只输出该年份的数据
             specific_month (int, optional): 指定月份，如果提供则只输出指定年月的数据
-            add_nat_stats (bool, optional): 是否添加NAT使用统计表格
             
         Returns:
             bool: 是否成功
@@ -2117,7 +2094,7 @@ class BillingManager:
                         sheet_name = sheet_name[:31]
                     
                     # 创建表格
-                    columns = ["VPS名称", "国家/地区", "IP地址", "是否使用NAT", "使用状态", "使用时长", "单价", "合计（$）"]
+                    columns = ["VPS名称", "使用状态", "使用时长", "单价", "合计（$）"]
                     
                     # 创建DataFrame
                     month_df = pd.DataFrame(columns=columns)
@@ -2126,9 +2103,6 @@ class BillingManager:
                     for row in bill_data.get('账单行', []):
                         month_df = pd.concat([month_df, pd.DataFrame([{
                             'VPS名称': row.get('VPS名称', ''),
-                            '国家/地区': row.get('国家/地区', ''),
-                            'IP地址': row.get('IP地址', ''),
-                            '是否使用NAT': row.get('是否使用NAT', '否'),
                             '使用状态': row.get('使用状态', ''),
                             '使用时长': row.get('使用时长', ''),
                             '单价': row.get('月单价', 0),
@@ -2184,123 +2158,13 @@ class BillingManager:
                         cell.alignment = center_alignment
                     
                     # 设置列宽
-                    worksheet.column_dimensions['A'].width = 25  # VPS名称，增加宽度以适应更长的名称
-                    worksheet.column_dimensions['B'].width = 15  # 国家/地区
-                    worksheet.column_dimensions['C'].width = 18  # IP地址，增加宽度以显示完整IP
-                    worksheet.column_dimensions['D'].width = 12  # 是否使用NAT
-                    worksheet.column_dimensions['E'].width = 12  # 使用状态
-                    worksheet.column_dimensions['F'].width = 18  # 使用时长，增加宽度以显示完整时长
-                    worksheet.column_dimensions['G'].width = 12  # 单价
-                    worksheet.column_dimensions['H'].width = 15  # 合计
+                    worksheet.column_dimensions['A'].width = 45  # VPS名称
+                    worksheet.column_dimensions['B'].width = 10  # 使用状态
+                    worksheet.column_dimensions['C'].width = 20  # 使用时长
+                    worksheet.column_dimensions['D'].width = 10  # 单价
+                    worksheet.column_dimensions['E'].width = 15  # 合计
                     
-                    # 添加NAT使用统计表格
-                    if add_nat_stats:
-                        # 统计使用NAT和不使用NAT的VPS数量和金额
-                        nat_used_vps = [row for row in bill_data.get('账单行', []) if row.get('是否使用NAT') == '是']
-                        nat_unused_vps = [row for row in bill_data.get('账单行', []) if row.get('是否使用NAT') == '否']
-                        
-                        nat_used_count = len(nat_used_vps)
-                        nat_unused_count = len(nat_unused_vps)
-                        
-                        nat_used_amount = sum(float(row.get('总金额', 0)) for row in nat_used_vps)
-                        nat_unused_amount = sum(float(row.get('总金额', 0)) for row in nat_unused_vps)
-                        
-                        # 计算起始行（主表格下方空两行）
-                        start_row = month_df.shape[0] + 4
-                        
-                        # 创建NAT统计表格标题
-                        stats_title_cell = worksheet.cell(row=start_row, column=1, value="NAT使用统计")
-                        stats_title_cell.font = Font(name='微软雅黑', size=11, bold=True)
-                        worksheet.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=3)
-                        
-                        # NAT统计表格使用相同的列宽设置，A列已经设置为25个字符宽度
-                        
-                        # 创建NAT统计表格头
-                        header_row = start_row + 1
-                        worksheet.cell(row=header_row, column=1, value="项目").fill = header_fill
-                        worksheet.cell(row=header_row, column=2, value="数量").fill = header_fill
-                        worksheet.cell(row=header_row, column=3, value="金额($)").fill = header_fill
-                        
-                        # 设置表头样式
-                        for col in range(1, 4):
-                            cell = worksheet.cell(row=header_row, column=col)
-                            cell.font = header_font
-                            cell.alignment = center_alignment
-                        
-                        # 添加数据行
-                        # 有使用NAT的VPS
-                        data_row = header_row + 1
-                        worksheet.cell(row=data_row, column=1, value="使用NAT的VPS")
-                        worksheet.cell(row=data_row, column=2, value=nat_used_count)
-                        worksheet.cell(row=data_row, column=3, value=round(nat_used_amount, 2))
-                        
-                        # 没使用NAT的VPS
-                        data_row += 1
-                        worksheet.cell(row=data_row, column=1, value="不使用NAT的VPS")
-                        worksheet.cell(row=data_row, column=2, value=nat_unused_count)
-                        worksheet.cell(row=data_row, column=3, value=round(nat_unused_amount, 2))
-                        
-                        # NAT费用
-                        data_row += 1
-                        worksheet.cell(row=data_row, column=1, value="NAT费用（按流量计费）")
-                        worksheet.cell(row=data_row, column=2, value=nat_used_count)
-                        worksheet.cell(row=data_row, column=3, value=round(bill_data['NAT费用'], 2))
-                        
-                        # 添加总金额行
-                        data_row += 1
-                        total_amount = round(nat_used_amount + nat_unused_amount + bill_data['NAT费用'], 2)
-                        
-                        # 设置总计行样式
-                        total_font = Font(name='微软雅黑', size=11, bold=True)
-                        total_fill = PatternFill(start_color='E6F1F5', end_color='E6F1F5', fill_type='solid')
-                        
-                        # 使用较粗的底边框
-                        thick_bottom = Side(border_style="medium", color="000000")
-                        total_border = Border(
-                            left=Side(style='thin'),
-                            right=Side(style='thin'),
-                            top=Side(style='thin'),
-                            bottom=thick_bottom
-                        )
-                        
-                        # 应用样式到总计行
-                        total_cell = worksheet.cell(row=data_row, column=1, value="总计")
-                        total_cell.font = total_font
-                        total_cell.fill = total_fill
-                        total_cell.border = total_border
-                        
-                        count_cell = worksheet.cell(row=data_row, column=2, value=nat_used_count + nat_unused_count)
-                        count_cell.font = total_font
-                        count_cell.fill = total_fill
-                        count_cell.border = total_border
-                        
-                        amount_cell = worksheet.cell(row=data_row, column=3, value=total_amount)
-                        amount_cell.font = total_font
-                        amount_cell.fill = total_fill
-                        amount_cell.border = total_border
-                        
-                        # 设置数据行样式
-                        for row in range(header_row+1, data_row+1):
-                            for col in range(1, 4):
-                                cell = worksheet.cell(row=row, column=col)
-                                if col == 1:
-                                    cell.alignment = left_alignment
-                                else:
-                                    cell.alignment = center_alignment
-                        
-                        # 设置表格边框
-                        thin_border = Border(
-                            left=Side(style='thin'),
-                            right=Side(style='thin'),
-                            top=Side(style='thin'),
-                            bottom=Side(style='thin')
-                        )
-                        
-                        for row in range(header_row, data_row+1):
-                            for col in range(1, 4):
-                                worksheet.cell(row=row, column=col).border = thin_border
-                    
-                    # 设置主表格数据行样式
+                    # 设置数据行样式
                     for row in range(2, worksheet.max_row + 1):
                         # 设置每一行的样式
                         for col in range(1, worksheet.max_column + 1):
@@ -2316,14 +2180,17 @@ class BillingManager:
                                 cell.alignment = center_alignment
                             
                             # 根据不同状态设置不同颜色
-                            if row < month_df.shape[0]:  # 排除NAT费用和总计行
-                                # 获取第E列的使用状态值
-                                status_cell = worksheet.cell(row=row, column=5)
+                            if row < worksheet.max_row - 1:  # 排除NAT费用和总计行
+                                # 获取第B列的使用状态值
+                                status_cell = worksheet.cell(row=row, column=2)
                                 status = status_cell.value
                                 
-                                # 获取该行是否使用NAT
-                                nat_cell = worksheet.cell(row=row, column=4)
-                                use_nat = nat_cell.value
+                                # 获取该行是否使用NAT (如果有该数据)
+                                use_nat = None
+                                if '是否使用NAT' in month_df.columns:
+                                    nat_col = month_df.columns.get_loc('是否使用NAT') + 1
+                                    nat_cell = worksheet.cell(row=row, column=nat_col)
+                                    use_nat = nat_cell.value
                                 
                                 # 设置颜色
                                 if status == '销毁':
@@ -2337,37 +2204,261 @@ class BillingManager:
                                     cell.font = Font(name='微软雅黑', size=10, color='0000FF')
                             
                             # 最后两行（NAT费用和总计）使用特殊样式
-                            if row >= month_df.shape[0] - 1:
+                            if row >= worksheet.max_row - 1:
                                 cell.font = Font(name='微软雅黑', size=11, bold=True, color='000000')
                     
                 logger.info(f"成功导出{specific_year}年{specific_month}月账单到 {output_file}")
                 return True
             
-            # 否则，导出多月汇总
+            # 不是指定月份导出，而是导出历史账单汇总
             else:
                 # 获取当前日期
                 now = datetime.datetime.now()
-                temp_end_year = now.year
-                temp_end_month = now.month
+                end_year = now.year
+                end_month = now.month
                 
                 # 如果指定了年份，则只导出该年份的数据
                 if specific_year is not None:
                     start_year = specific_year
-                    temp_end_year = specific_year
+                    end_year = specific_year
                 
                 # 获取月账单表格数据
-                summary_df, bill_data = self.generate_monthly_bill_table(start_year, temp_end_year, temp_end_month)
+                summary_df, bill_data = self.generate_monthly_bill_table(start_year, end_year, end_month)
                 
                 # 检查是否有数据
                 if summary_df.empty or not bill_data:
-                    logger.warning(f"没有找到从{start_year}年到{temp_end_year}年{temp_end_month}月的账单数据")
+                    logger.warning(f"没有找到从{start_year}年到{end_year}年{end_month}月的账单数据")
                     return False
                 
-                # ... 这里是原来的多月汇总代码 ...
+                # 确保目录存在
+                output_dir = os.path.dirname(output_file)
+                if output_dir and not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
                 
-                logger.info(f"成功导出从{start_year}年到{temp_end_year}年{temp_end_month}月的账单汇总到 {output_file}")
+                # 创建Excel工作簿，使用openpyxl引擎支持更多格式设置
+                with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                    # 首先保存汇总表
+                    summary_df.to_excel(writer, sheet_name='月度账单汇总', index=False)
+                    
+                    # 获取汇总工作表
+                    summary_sheet = writer.sheets['月度账单汇总']
+                    
+                    # 导入样式
+                    from openpyxl.styles import PatternFill, Alignment, Font, Color, Border, Side
+                    
+                    # 设置表头样式
+                    header_fill = PatternFill(start_color='B7DEE8', end_color='B7DEE8', fill_type='solid')
+                    header_font = Font(name='微软雅黑', size=11, bold=True, color='000000')
+                    
+                    # 设置单元格对齐方式
+                    center_alignment = Alignment(horizontal='center', vertical='center')
+                    
+                    # 应用表头样式
+                    for cell in next(summary_sheet.iter_rows(min_row=1, max_row=1)):
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = center_alignment
+                    
+                    # 设置列宽
+                    summary_sheet.column_dimensions['A'].width = 10  # 年份
+                    summary_sheet.column_dimensions['B'].width = 10  # 月份
+                    summary_sheet.column_dimensions['C'].width = 15  # 账单日期
+                    summary_sheet.column_dimensions['D'].width = 10  # VPS数量
+                    summary_sheet.column_dimensions['E'].width = 10  # NAT费用
+                    summary_sheet.column_dimensions['F'].width = 10  # 月总费用
+                    
+                    # 设置数据行样式
+                    for row in range(2, summary_sheet.max_row + 1):
+                        for col in range(1, summary_sheet.max_column + 1):
+                            cell = summary_sheet.cell(row=row, column=col)
+                            cell.alignment = center_alignment
+                    
+                    # 然后保存每个月份的详细账单
+                    for bill in bill_data:
+                        year = bill['年份']
+                        month = bill['月份']
+                        
+                        # 设置月份名称
+                        month_names = {
+                            1: "一月", 2: "二月", 3: "三月", 4: "四月",
+                            5: "五月", 6: "六月", 7: "七月", 8: "八月",
+                            9: "九月", 10: "十月", 11: "十一月", 12: "十二月"
+                        }
+                        month_name = month_names.get(month, str(month) + "月")
+                        
+                        # 创建工作表名
+                        sheet_name = f"{year}年{month_name}"
+                        
+                        # 确保工作表名称不超过31个字符（Excel限制）
+                        if len(sheet_name) > 31:
+                            sheet_name = sheet_name[:31]
+                        
+                        # 获取月份数据
+                        month_data = bill['详细数据']
+                        
+                        # 确定列：一些月份可能包含销毁时间列
+                        # 检查是否有销毁时间
+                        has_destroy_time = bill.get('显示销毁时间列', False)
+                        
+                        if has_destroy_time:
+                            columns = ['VPS名称', '是否使用NAT', '使用状态', '销毁时间', '使用时长', '单价/月（$）', '合计（$）']
+                        else:
+                            columns = ['VPS名称', '是否使用NAT', '使用状态', '使用时长', '单价/月（$）', '合计（$）']
+                        
+                        # 创建DataFrame
+                        month_df = pd.DataFrame(month_data, columns=columns)
+                        
+                        # 添加NAT费用和总计行
+                        if bill['NAT费用'] > 0:
+                            # 计算使用NAT的VPS和它们的总使用天数
+                            nat_vps_count = sum(1 for row in bill['详细数据'] if row.get('是否使用NAT') == '是')
+                            
+                            # 计算NAT VPS的总使用天数
+                            total_nat_days = 0
+                            for row in bill['详细数据']:
+                                if row.get('是否使用NAT') == '是':
+                                    usage_str = row.get('使用时长', '')
+                                    # 尝试解析使用时长中的天数
+                                    if '天' in usage_str:
+                                        try:
+                                            days_part = usage_str.split('天')[0]
+                                            days = int(days_part)
+                                            # 如果有小时且超过12小时，天数加1
+                                            if '小时' in usage_str:
+                                                hours_part = usage_str.split('天')[1].split('小时')[0]
+                                                hours = int(hours_part)
+                                                if hours > 12:
+                                                    days += 1
+                                            total_nat_days += days
+                                        except (ValueError, IndexError):
+                                            pass
+                            
+                            # 获取指定年月的实时汇率
+                            exchange_rate = self.get_exchange_rate(year, month)
+                            exchange_rate_display = round(1 / exchange_rate, 2) if exchange_rate > 0 else 0
+                            
+                            nat_row = pd.Series({
+                                'VPS名称': f'NAT费用({nat_vps_count}台VPS共{total_nat_days}天×1G/天×¥1/G÷当月汇率¥{exchange_rate_display}:$1)',
+                                '合计（$）': bill['NAT费用']
+                            })
+                            month_df = pd.concat([month_df, pd.DataFrame([nat_row])], ignore_index=True)
+                        
+                        # 添加总计行
+                        total_row = pd.Series({
+                            'VPS名称': '总计',
+                            '合计（$）': bill['月总费用']
+                        })
+                        month_df = pd.concat([month_df, pd.DataFrame([total_row])], ignore_index=True)
+                        
+                        # 保存到Excel
+                        month_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # 获取工作表列表
+                    worksheets = writer.sheets
+                    
+                    # 导入样式
+                    from openpyxl.styles import PatternFill, Alignment, Font, Color, Border, Side
+                    
+                    # 设置表格整体背景为草绿色边框
+                    # 使用更深的草绿色作为边框
+                    thin_border = Side(border_style="thin", color="2E8B57")
+                    medium_border = Side(border_style="medium", color="2E8B57")
+                    bordered_cell = Border(top=thin_border, left=thin_border, right=thin_border, bottom=thin_border)
+                    header_border = Border(top=medium_border, left=medium_border, right=medium_border, bottom=medium_border)
+                    
+                    # 自动换行和居中对齐
+                    alignment = Alignment(wrap_text=True, horizontal='center', vertical='center')
+                    
+                    # 为每个月份工作表设置样式
+                    for sheet_name, sheet in worksheets.items():
+                        if sheet_name != '月度账单汇总':
+                            # 设置表头样式
+                            header_fill = PatternFill(start_color='B7DEE8', end_color='B7DEE8', fill_type='solid')
+                            header_font = Font(name='微软雅黑', size=11, bold=True, color='000000')
+                            
+                            # 应用表头样式
+                            for cell in next(sheet.iter_rows(min_row=1, max_row=1)):
+                                cell.fill = header_fill
+                                cell.font = header_font
+                                cell.alignment = center_alignment
+                                cell.border = header_border
+                            
+                            # 设置列宽
+                            sheet.column_dimensions['A'].width = 45  # VPS名称
+                            if '是否使用NAT' in month_df.columns:
+                                sheet.column_dimensions['B'].width = 15  # 是否使用NAT
+                                sheet.column_dimensions['C'].width = 10  # 使用状态
+                                col_offset = 1
+                                if has_destroy_time:
+                                    sheet.column_dimensions['D'].width = 15  # 销毁时间
+                                    col_offset += 1
+                                sheet.column_dimensions[chr(68 + col_offset)].width = 20  # 使用时长
+                                sheet.column_dimensions[chr(69 + col_offset)].width = 15  # 单价/月
+                                sheet.column_dimensions[chr(70 + col_offset)].width = 15  # 合计
+                            
+                            # 设置数据行样式
+                            for row in range(2, sheet.max_row + 1):
+                                # 设置每一行的样式
+                                row_font = Font(name='微软雅黑', size=10)
+                                
+                                # NAT费用和总计行使用粗体
+                                if row >= sheet.max_row - 1:
+                                    row_font = Font(name='微软雅黑', size=10, bold=True)
+                                
+                                for col in range(1, sheet.max_column + 1):
+                                    cell = sheet.cell(row=row, column=col)
+                                    cell.font = row_font
+                                    cell.border = bordered_cell
+                                    
+                                    # 根据不同状态设置不同颜色
+                                    if row < sheet.max_row - 1:  # 排除NAT费用和总计行
+                                        # 获取使用状态值
+                                        status_col = None
+                                        for idx, col_name in enumerate(month_df.columns):
+                                            if col_name == '使用状态':
+                                                status_col = idx + 1
+                                                break
+                                        
+                                        nat_col = None
+                                        for idx, col_name in enumerate(month_df.columns):
+                                            if col_name == '是否使用NAT':
+                                                nat_col = idx + 1
+                                                break
+                                            
+                                        if status_col and nat_col:
+                                            status_cell = sheet.cell(row=row, column=status_col)
+                                            nat_cell = sheet.cell(row=row, column=nat_col)
+                                            
+                                            status = status_cell.value
+                                            use_nat = nat_cell.value
+                                            
+                                            # 设置颜色
+                                            if status == '销毁':
+                                                # 销毁的VPS设为红色
+                                                cell.font = Font(name='微软雅黑', size=10, color='FF0000')
+                                            elif use_nat == '是':
+                                                # 使用NAT的VPS设为紫色
+                                                cell.font = Font(name='微软雅黑', size=10, color='800080')
+                                            elif use_nat == '否':
+                                                # 不使用NAT的VPS设为蓝色
+                                                cell.font = Font(name='微软雅黑', size=10, color='0000FF')
+                                    
+                                    # NAT费用和总计行使用特殊样式
+                                    if row >= sheet.max_row - 1:
+                                        cell.font = Font(name='微软雅黑', size=10, bold=True, color='000000')
+                                    
+                                    # VPS名称列左对齐
+                                    if col == 1:
+                                        cell.alignment = Alignment(wrap_text=True, horizontal='left', vertical='center')
+                                    # 金额列右对齐
+                                    elif col >= sheet.max_column - 1:
+                                        cell.alignment = Alignment(wrap_text=True, horizontal='right', vertical='center')
+                                    else:
+                                        cell.alignment = Alignment(wrap_text=True, horizontal='center', vertical='center')
+                
+                logger.info(f"成功导出从{start_year}年到{end_year}年{end_month}月的账单汇总到 {output_file}")
                 return True
-            
+                
         except Exception as e:
             logger.error(f"保存月账单统计到Excel出错: {str(e)}", exc_info=True)
             return False
@@ -2576,7 +2667,6 @@ if __name__ == "__main__":
     parser.add_argument('--vps_name', type=str, help='VPS名称')
     parser.add_argument('--vps_data', type=str, help='VPS数据JSON字符串')
     parser.add_argument('--vps_list', type=str, help='批量添加的VPS数据列表JSON字符串')
-    parser.add_argument('--add_nat_stats', type=str, help='是否添加NAT使用统计表格，值为"true"时添加')
     args = parser.parse_args()
     
     # 创建账单管理器实例
@@ -2618,24 +2708,18 @@ if __name__ == "__main__":
             
             # 检查是否提供了年月参数
             if args.specific_year is not None and args.specific_month is not None:
-                # 检查是否需要添加NAT统计表格
-                add_nat_stats = args.add_nat_stats == 'true'
                 # 如果提供了specific_year和specific_month参数，只导出指定月份的账单
                 success = billing_manager.save_monthly_billing_to_excel(
                     output_file, 
                     specific_year=args.specific_year, 
-                    specific_month=args.specific_month,
-                    add_nat_stats=add_nat_stats
+                    specific_month=args.specific_month
                 )
             elif args.year is not None and args.month is not None:
-                # 检查是否需要添加NAT统计表格
-                add_nat_stats = args.add_nat_stats == 'true'
                 # 兼容旧参数 year 和 month
                 success = billing_manager.save_monthly_billing_to_excel(
                     output_file, 
                     specific_year=args.year, 
-                    specific_month=args.month,
-                    add_nat_stats=add_nat_stats
+                    specific_month=args.month
                 )
             else:
                 # 否则导出所有月份的账单汇总
