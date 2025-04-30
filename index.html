@@ -1855,7 +1855,14 @@
                 {{ server.name }} ({{ server.host }})
               </option>
             </select>
-            <button @click="loadWireguardInstances" :disabled="!wireguardSelectedServer">刷新</button>
+            <button class="btn btn-success" @click="loadWireguardInstances" :disabled="isRefreshingWireguard">
+              <i class="bi bi-arrow-clockwise" :class="{ 'spinner': isRefreshingWireguard }"></i>
+              {{ isRefreshingWireguard ? '刷新中...' : '刷新' }}
+            </button>
+            <button class="btn btn-primary ms-2" @click="forceSyncWireguardConfig" :disabled="isRefreshingWireguard">
+              <i class="bi bi-lightning-charge" :class="{ 'spinner': isRefreshingWireguard }"></i>
+              强制同步配置
+            </button>
             <button @click="deployWireguard(wireguardSelectedServer)" :disabled="!wireguardSelectedServer" class="primary-button">部署新Wireguard</button>
           </div>
           
@@ -1927,8 +1934,8 @@
                         <td>{{ peer.address }}</td>
                         <td class="truncate-text">{{ peer.publicKey }}</td>
                         <td>
-                          <button @click="viewPeerConfig(peer)" class="small-button view-config-button">查看配置</button>
-                          <button @click="deletePeer(peer.number)" class="small-button delete-button">删除</button>
+                          <button @click="viewPeerConfig(peer)" class="btn btn-success btn-sm">查看配置</button>
+                          <button @click="deletePeer(peer.number)" class="btn btn-danger btn-sm">删除</button>
                         </td>
                       </tr>
                     </tbody>

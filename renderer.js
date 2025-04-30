@@ -100,7 +100,8 @@ createApp({
       batchVpsData: '',
       batchVpsList: [],
       // IP地址检测相关变量
-      isDetectingIp: false
+      isDetectingIp: false,
+      isRefreshingWireguard: false,  // 标记是否正在刷新Wireguard
     };
   },
   
@@ -1733,6 +1734,201 @@ createApp({
       } catch (error) {
         console.error('批量添加VPS失败:', error);
         alert('批量添加VPS失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 添加loadWireguardInstances方法如果不存在，并更新其实现
+    async loadWireguardInstances() {
+      if (!this.wireguardSelectedServer) return;
+      
+      try {
+        this.wireguardLoading = true;
+        this.wireguardInstances = [];
+        this.wireguardInstanceDetails = null;
+        this.wireguardSelectedInstance = '';
+        // 清除所有相关状态，确保切换VPS后不会显示前一个VPS的配置
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
+        
+        const result = await window.electronAPI.getWireguardInstances(this.wireguardSelectedServer);
+        console.log('Wireguard实例列表:', result);
+        
+        if (result.success) {
+          this.wireguardInstances = result.instances || [];
+          
+          // 如果只有一个实例，自动选择它
+          if (this.wireguardInstances.length === 1) {
+            this.wireguardSelectedInstance = this.wireguardInstances[0];
+            await this.loadInstanceDetails();
+          }
+        } else {
+          console.error('获取Wireguard实例失败:', result.error);
+          alert('获取Wireguard实例失败: ' + result.error);
+        }
+      } catch (error) {
+        console.error('加载Wireguard实例列表失败:', error);
+        alert('加载Wireguard实例列表失败: ' + (error.message || '未知错误'));
+      } finally {
+        this.wireguardLoading = false;
+      }
+    },
+    
+    // 添加强制同步Wireguard配置的方法
+    async forceSyncWireguardConfig() {
+      if (!this.wireguardSelectedServer) {
+        alert('请先选择服务器');
+        return;
+      }
+      
+      try {
+        this.isRefreshingWireguard = true;
+        console.log('开始强制同步Wireguard配置...');
+        
+        // 调用主进程的强制同步方法
+        const result = await window.electronAPI.forceSyncWireguardConfigs(this.wireguardSelectedServer);
+        
+        if (result.success) {
+          console.log('强制同步成功:', result);
+          this.wireguardInstances = result.instances || [];
+          
+          // 如果只有一个实例，自动选择它
+          if (this.wireguardInstances.length === 1) {
+            this.wireguardSelectedInstance = this.wireguardInstances[0];
+            await this.loadInstanceDetails();
+          }
+          
+          alert('已成功同步Wireguard配置');
+        } else {
+          console.error('强制同步失败:', result.error);
+          alert('强制同步Wireguard配置失败: ' + result.error);
+          
+          // 强制同步失败后尝试普通刷新
+          await this.loadWireguardInstances();
+        }
+      } catch (error) {
+        console.error('强制同步Wireguard配置出错:', error);
+        alert('强制同步Wireguard配置出错: ' + (error.message || '未知错误'));
+      } finally {
+        this.isRefreshingWireguard = false;
+      }
+    },
+    
+    // 添加loadInstanceDetails方法
+    async loadInstanceDetails() {
+      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {
+        return;
+      }
+      
+      try {
+        this.wireguardLoading = true;
+        this.wireguardInstanceDetails = null;
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
+        
+        console.log(`加载Wireguard实例[${this.wireguardSelectedInstance}]详情...`);
+        
+        const result = await window.electronAPI.getWireguardInstanceDetails(
+          this.wireguardSelectedServer,
+          this.wireguardSelectedInstance
+        );
+        
+        console.log('加载实例详情结果:', result);
+        
+        if (result.success) {
+          this.wireguardInstanceDetails = result.details;
+          console.log('实例详情加载成功:', JSON.stringify(result.details, null, 2));
+          
+          // 检查是否有peer配置
+          if (result.details.peers && result.details.peers.length > 0) {
+            console.log(`成功加载${result.details.peers.length}个peer配置`);
+          } else {
+            console.log('没有找到peer配置，尝试强制同步配置');
+            // 如果没有peer，可以自动尝试强制同步一次
+            const syncResult = await window.electronAPI.forceSyncWireguardConfigs(this.wireguardSelectedServer);
+            if (syncResult.success) {
+              console.log('强制同步成功，重新加载实例详情');
+              // 重新加载实例详情
+              const refreshResult = await window.electronAPI.getWireguardInstanceDetails(
+                this.wireguardSelectedServer,
+                this.wireguardSelectedInstance
+              );
+              if (refreshResult.success) {
+                this.wireguardInstanceDetails = refreshResult.details;
+                console.log('重新加载实例详情成功:', refreshResult.details);
+              }
+            }
+          }
+        } else {
+          console.error('加载实例详情失败:', result.error);
+          alert('加载Wireguard实例详情失败: ' + result.error);
+        }
+      } catch (error) {
+        console.error('加载实例详情异常:', error);
+        alert('加载Wireguard实例详情失败: ' + (error.message || '未知错误'));
+      } finally {
+        this.wireguardLoading = false;
+      }
+    },
+    
+    // 查看Peer配置
+    async viewPeerConfig(peer) {
+      if (!peer) return;
+      
+      try {
+        console.log(`查看Peer ${peer.number} 配置:`, peer);
+        this.viewingPeer = peer;
+        
+        // 生成二维码
+        if (peer.config) {
+          const qrResult = await window.electronAPI.generateQRCode(peer.config);
+          if (qrResult.success) {
+            this.viewPeerQrCode = qrResult.qrCodeImage;
+          } else {
+            console.error('生成二维码失败:', qrResult.error);
+          }
+        } else {
+          console.error('配置内容为空，无法生成二维码');
+        }
+      } catch (error) {
+        console.error('查看Peer配置失败:', error);
+        alert('查看Peer配置失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 添加Peer节点
+    async addPeer() {
+      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {
+        alert('请先选择服务器和Wireguard实例');
+        return;
+      }
+      
+      try {
+        this.addingPeer = true;
+        console.log(`为服务器[${this.wireguardSelectedServer}]的Wireguard实例[${this.wireguardSelectedInstance}]添加Peer`);
+        
+        const result = await window.electronAPI.addWireguardPeer(
+          this.wireguardSelectedServer,
+          this.wireguardSelectedInstance
+        );
+        
+        console.log('添加Peer结果:', result);
+        
+        this.peerResult = result;
+        
+        if (result.success) {
+          // 重新加载实例详情
+          this.loadInstanceDetails();
+        }
+      } catch (error) {
+        console.error('添加Peer失败:', error);
+        this.peerResult = {
+          success: false,
+          error: error.message || '未知错误'
+        };
+      } finally {
+        this.addingPeer = false;
       }
     },
   }

@@ -295,15 +295,98 @@ async function connectToSSH(server) {
 // 获取已部署的Wireguard实例列表
 async function getWireguardInstances(ssh) {
   try {
-    // 列出所有wireguard配置文件
-    const result = await ssh.execCommand('ls -l /etc/wireguard/ | grep ".conf" | awk \'{print $9}\' | sed "s/.conf$//"');
+    console.log('开始获取Wireguard实例列表...');
     
-    if (result.stdout) {
-      // 返回实例名称列表，例如["wg0", "wg1", ...]
-      return result.stdout.split('\n').filter(name => name.trim() !== '');
+    // 首先检查/etc/wireguard/目录下的配置文件
+    const etcResult = await ssh.execCommand('ls -l /etc/wireguard/ | grep ".conf" | awk \'{print $9}\' | sed "s/.conf$//"');
+    console.log('/etc/wireguard/目录检查结果:', etcResult.stdout || '无输出', '错误:', etcResult.stderr || '无错误');
+    
+    // 检查/root/VPS配置WG目录下的客户端配置文件
+    const peerResult = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null | sed -r "s/.*\\/([^-]+)-peer.*-client\\.conf/\\1/" | sort | uniq');
+    console.log('客户端配置文件检查结果:', peerResult.stdout || '无输出', '错误:', peerResult.stderr || '无错误');
+    
+    // 直接使用wg命令检查活动接口
+    const wgResult = await ssh.execCommand('wg show interfaces 2>/dev/null; echo "退出码: $?"');
+    console.log('wg命令检查结果:', wgResult.stdout || '无输出', '错误:', wgResult.stderr || '无错误');
+    
+    // 检查系统服务状态
+    const serviceResult = await ssh.execCommand('systemctl status wg-quick@* 2>/dev/null || echo "无服务信息"');
+    console.log('WireGuard服务状态:', serviceResult.stdout || '无服务信息');
+    
+    // 检查内核模块
+    const moduleResult = await ssh.execCommand('lsmod | grep wireguard || echo "未加载wireguard模块"');
+    console.log('WireGuard内核模块状态:', moduleResult.stdout || '未找到模块');
+    
+    // 合并结果
+    const instancesSet = new Set();
+    
+    // 从/etc/wireguard/目录添加
+    if (etcResult.stdout) {
+      etcResult.stdout.split('\n')
+        .filter(name => name.trim() !== '')
+        .forEach(name => instancesSet.add(name));
     }
     
-    return [];
+    // 从客户端配置文件添加
+    if (peerResult.stdout) {
+      peerResult.stdout.split('\n')
+        .filter(name => name.trim() !== '')
+        .forEach(name => instancesSet.add(name));
+    }
+    
+    // 从wg命令结果添加
+    if (wgResult.stdout) {
+      wgResult.stdout.split('\n')
+        .filter(name => name.trim() !== '' && !name.includes('退出码:'))
+        .forEach(name => instancesSet.add(name));
+    }
+    
+    // 从服务状态提取
+    if (serviceResult.stdout && serviceResult.stdout !== '无服务信息') {
+      const serviceMatches = serviceResult.stdout.match(/wg-quick@([a-zA-Z0-9]+)\.service/g);
+      if (serviceMatches) {
+        serviceMatches.forEach(match => {
+          const name = match.replace('wg-quick@', '').replace('.service', '');
+          instancesSet.add(name);
+        });
+      }
+    }
+    
+    // 确保VPS配置WG目录存在，以便后续操作
+    await ssh.execCommand('mkdir -p /root/VPS配置WG');
+    
+    // 转换为数组并返回
+    const instances = Array.from(instancesSet);
+    console.log('检测到的Wireguard实例:', instances);
+    
+    // 如果没有找到实例，尝试通过其他命令检测
+    if (instances.length === 0) {
+      console.log('未检测到Wireguard实例，尝试通过其他命令检测...');
+      
+      // 检查网络接口
+      const ifconfigResult = await ssh.execCommand('ip a | grep -E "wg[0-9]+" || echo "未找到wg接口"');
+      console.log('网络接口检查结果:', ifconfigResult.stdout || '无输出');
+      
+      // 检查是否安装了wireguard
+      const installCheckResult = await ssh.execCommand('which wg || echo "未安装wireguard"');
+      console.log('wireguard安装检查:', installCheckResult.stdout || '无输出');
+      
+      if (ifconfigResult.stdout && !ifconfigResult.stdout.includes('未找到wg接口')) {
+        // 从ip命令输出中提取接口名
+        const interfaceMatches = ifconfigResult.stdout.match(/wg[0-9]+/g);
+        if (interfaceMatches) {
+          interfaceMatches.forEach(name => instancesSet.add(name));
+          console.log('从ip命令中检测到的接口:', interfaceMatches);
+        }
+      }
+      
+      // 更新实例列表
+      const updatedInstances = Array.from(instancesSet);
+      console.log('最终检测到的Wireguard实例:', updatedInstances);
+      return updatedInstances;
+    }
+    
+    return instances;
   } catch (error) {
     console.error('获取Wireguard实例列表失败:', error);
     throw new Error('获取Wireguard实例列表失败: ' + error.message);
@@ -313,26 +396,242 @@ async function getWireguardInstances(ssh) {
 // 获取Wireguard实例的详细信息
 async function getWireguardInstanceDetails(ssh, instanceName) {
   try {
-    // 检查配置文件是否存在
-    const checkResult = await ssh.execCommand(`test -f /etc/wireguard/${instanceName}.conf && echo "exists" || echo "not exists"`);
+    console.log(`开始获取Wireguard实例[${instanceName}]的详细信息...`);
     
-    if (checkResult.stdout.trim() !== 'exists') {
-      throw new Error(`Wireguard实例 ${instanceName} 不存在`);
+    // 获取服务器公网IP
+    console.log('获取服务器公网IP...');
+    const publicIPResult = await ssh.execCommand(`
+      curl -s https://api.ipify.org || 
+      curl -s https://ifconfig.me || 
+      curl -s https://checkip.amazonaws.com || 
+      hostname -I | awk '{print $1}'
+    `);
+    
+    const publicIP = publicIPResult.stdout.trim();
+    console.log(`服务器公网IP: ${publicIP || '无法获取'}`);
+    
+    // 检查多个位置的配置文件
+    const etcCheckResult = await ssh.execCommand(`test -f /etc/wireguard/${instanceName}.conf && echo "exists" || echo "not exists"`);
+    console.log(`/etc/wireguard/${instanceName}.conf检查结果:`, etcCheckResult.stdout.trim());
+    
+    let configData = '';
+    
+    // 检查/etc/wireguard中的配置
+    if (etcCheckResult.stdout.trim() === 'exists') {
+      const configResult = await ssh.execCommand(`cat /etc/wireguard/${instanceName}.conf`);
+      configData = configResult.stdout;
+      console.log(`已从/etc/wireguard/${instanceName}.conf读取配置`);
+      if (configData) {
+        console.log(`配置内容预览(前100字符): ${configData.substring(0, 100)}...`);
+      } else {
+        console.log(`警告: 配置文件存在但内容为空`);
+      }
+    } else {
+      // 尝试使用wg show命令获取配置
+      console.log(`未在/etc/wireguard中找到${instanceName}.conf，尝试从wg命令获取配置`);
+      const wgConfigResult = await ssh.execCommand(`wg showconf ${instanceName} 2>/dev/null || echo "无法获取配置"`);
+      console.log(`wg showconf ${instanceName}结果:`, 
+               wgConfigResult.stdout.includes('无法获取配置') ? '无法获取配置' : '获取到配置', 
+               '错误:', wgConfigResult.stderr || '无错误');
+      
+      if (wgConfigResult.stdout && !wgConfigResult.stdout.includes('无法获取配置')) {
+        configData = wgConfigResult.stdout;
+        // 将配置保存到/etc/wireguard目录
+        console.log(`尝试将wg showconf输出保存到/etc/wireguard/${instanceName}.conf`);
+        await ssh.execCommand(`mkdir -p /etc/wireguard && echo '${configData.replace(/'/g, "'\\''")}' > /etc/wireguard/${instanceName}.conf`);
+        console.log(`已将${instanceName}配置保存到/etc/wireguard/${instanceName}.conf`);
+      } else {
+        // 尝试从网络接口配置获取信息
+        console.log(`wg showconf命令未返回配置，尝试从网络接口获取信息`);
+        const ifconfigResult = await ssh.execCommand(`ip -d link show ${instanceName} 2>/dev/null || echo "未找到接口"`);
+        console.log(`${instanceName}接口信息:`, ifconfigResult.stdout || '未找到接口');
+        
+        if (ifconfigResult.stdout && !ifconfigResult.stdout.includes('未找到接口')) {
+          console.log(`检测到${instanceName}接口，尝试生成最小配置`);
+          // 生成最小配置
+          const minConfigResult = await ssh.execCommand(`
+            # 提取监听端口
+            PORT=$(wg show ${instanceName} listen-port 2>/dev/null || echo "51820")
+            # 提取私钥(如果有权限)
+            PRIVKEY=$(wg show ${instanceName} private-key 2>/dev/null || echo "未知私钥")
+            # 提取IP地址
+            IP=$(ip -4 addr show ${instanceName} | grep -oP 'inet \\K[\\d.]+' || echo "10.0.0.1")
+            
+            # 生成基本配置
+            echo "[Interface]"
+            echo "PrivateKey = $PRIVKEY"
+            echo "Address = $IP/24"
+            echo "ListenPort = $PORT"
+            
+            # 检查是否启用了转发
+            if grep -q 1 /proc/sys/net/ipv4/ip_forward; then
+              echo "# 已启用IP转发"
+            fi
+          `);
+          
+          if (minConfigResult.stdout && !minConfigResult.stdout.includes('未知私钥')) {
+            configData = minConfigResult.stdout;
+            console.log(`已生成${instanceName}的基本配置`);
+          } else {
+            console.log(`无法生成${instanceName}的有效配置`);
+          }
+        } else {
+          console.log(`未能找到${instanceName}接口，尝试最后方法：查找客户端配置文件`);
+          
+          // 使用客户端配置文件生成服务器配置
+          const firstClientConfig = await ssh.execCommand(`find /root/VPS配置WG -name "${instanceName}-peer*-client.conf" | head -1`);
+          if (firstClientConfig.stdout.trim()) {
+            console.log(`找到客户端配置文件: ${firstClientConfig.stdout.trim()}`);
+            
+            // 从客户端配置提取服务器信息
+            const serverConfigGenResult = await ssh.execCommand(`
+              CLIENT_FILE="${firstClientConfig.stdout.trim()}"
+              SERVER_PUBKEY=$(grep -oP 'PublicKey\\s*=\\s*\\K[A-Za-z0-9+/=]+' "$CLIENT_FILE")
+              ENDPOINT=$(grep -oP 'Endpoint\\s*=\\s*\\K[^:]+' "$CLIENT_FILE")
+              PORT=$(grep -oP 'Endpoint\\s*=\\s*[^:]+:\\K\\d+' "$CLIENT_FILE")
+              ADDRESS=$(grep -oP 'Address\\s*=\\s*\\K[0-9./]+' "$CLIENT_FILE" | sed 's/\\.[0-9]*\\//\\.1\\//g')
+              
+              # 生成服务器私钥
+              cd /root/VPS配置WG
+              [ ! -f "${instanceName}-server.key" ] && wg genkey > ${instanceName}-server.key
+              SERVER_PRIVKEY=$(cat ${instanceName}-server.key)
+              
+              echo "[Interface]"
+              echo "PrivateKey = $SERVER_PRIVKEY"
+              echo "Address = $ADDRESS"
+              echo "ListenPort = \${PORT:-51820}"
+              echo "# 从客户端配置生成的基本配置"
+            `);
+            
+            if (serverConfigGenResult.stdout && serverConfigGenResult.stdout.includes('PrivateKey')) {
+              configData = serverConfigGenResult.stdout;
+              console.log(`从客户端配置生成了服务器基本配置`);
+              
+              // 创建服务器配置文件
+              await ssh.execCommand(`mkdir -p /etc/wireguard && echo '${configData.replace(/'/g, "'\\''")}' > /etc/wireguard/${instanceName}.conf`);
+              console.log(`已根据客户端配置创建服务器配置文件`);
+            }
+          } else {
+            console.log(`未找到客户端配置文件，无法生成服务器配置`);
+          }
+        }
+      }
     }
-    
-    // 获取实例配置内容
-    const configResult = await ssh.execCommand(`cat /etc/wireguard/${instanceName}.conf`);
     
     // 获取实例状态
     const statusResult = await ssh.execCommand(`wg show ${instanceName} 2>/dev/null || echo "接口未激活"`);
+    console.log(`${instanceName}状态检查结果:`, statusResult.stdout.includes('接口未激活') ? '接口未激活' : '接口已激活');
+    
+    // 获取监听端口
+    let listenPort = '51820'; // 默认端口
+    const portMatch = statusResult.stdout.match(/listening port: (\d+)/);
+    if (portMatch && portMatch[1]) {
+      listenPort = portMatch[1];
+      console.log(`找到监听端口: ${listenPort}`);
+    }
+    
+    // 格式化状态信息，添加公网IP和端口
+    let formattedStatus = statusResult.stdout;
+    if (publicIP) {
+      // 创建更友好的状态显示
+      const summaryStatus = `Wireguard服务信息:
+服务器公网IP: ${publicIP}
+监听端口: ${listenPort}
+接口状态: ${statusResult.stdout.includes('接口未激活') ? '未激活' : '已激活'}
+
+详细状态:
+${statusResult.stdout}`;
+      
+      formattedStatus = summaryStatus;
+    }
+    
+    // 确保VPS配置WG目录存在
+    await ssh.execCommand('mkdir -p /root/VPS配置WG');
     
     // 从VPS配置WG目录下获取peer信息
     const peersResult = await ssh.execCommand(`find /root/VPS配置WG -name "${instanceName}-peer*-client.conf" | sort`);
+    console.log(`查找${instanceName}客户端配置结果:`, peersResult.stdout ? `找到${peersResult.stdout.split('\n').filter(l => l.trim()).length}个文件` : '未找到客户端配置');
     
     const peers = [];
     
-    if (peersResult.stdout) {
+    // 如果没有找到客户端配置文件，尝试从wg命令获取peer信息并创建客户端配置
+    if (!peersResult.stdout || peersResult.stdout.trim() === '') {
+      console.log(`未找到${instanceName}的客户端配置文件，尝试从wg命令获取peer信息`);
+      const wgShowResult = await ssh.execCommand(`wg show ${instanceName} 2>/dev/null || echo "无法获取peer信息"`);
+      console.log(`wg show ${instanceName}结果:`, wgShowResult.stdout.includes('peer:') ? '找到peer信息' : '未找到peer信息');
+      
+      if (wgShowResult.stdout && wgShowResult.stdout.includes('peer:')) {
+        console.log(`找到${instanceName}的peer信息，准备创建客户端配置文件`);
+        
+        // 提取服务器信息
+        const serverPublicKeyMatch = wgShowResult.stdout.match(/public key: ([A-Za-z0-9+\/=]+)/);
+        const listenPortMatch = wgShowResult.stdout.match(/listening port: (\d+)/);
+        console.log('服务器公钥:', serverPublicKeyMatch ? '已提取' : '未提取', 
+                    '监听端口:', listenPortMatch ? listenPortMatch[1] : '未找到');
+        
+        // 使用前面已获取的公网IP
+        console.log('使用已获取的服务器公网IP:', publicIP || '未能获取公网IP');
+        
+        // 获取服务器网络信息，用于客户端配置
+        const serverNetworkMatch = configData.match(/Address\s*=\s*([0-9.\/]+)/);
+        console.log('服务器网络信息:', serverNetworkMatch ? serverNetworkMatch[1] : '未找到网络信息');
+        
+        if (serverPublicKeyMatch && listenPortMatch && publicIP && serverNetworkMatch) {
+          // 从wg show命令解析peer信息
+          const peerSections = wgShowResult.stdout.split('peer:').slice(1);
+          console.log(`发现${peerSections.length}个peer，准备生成配置文件`);
+          
+          for (let i = 0; i < peerSections.length; i++) {
+            const peerSection = peerSections[i];
+            const peerPublicKeyMatch = peerSection.match(/([A-Za-z0-9+\/=]+)/);
+            const allowedIPsMatch = peerSection.match(/allowed ips: ([0-9.\/,\s]+)/);
+            
+            if (peerPublicKeyMatch && allowedIPsMatch) {
+              const peerPublicKey = peerPublicKeyMatch[1];
+              const allowedIPs = allowedIPsMatch[1].split(',')[0].trim();
+              console.log(`Peer ${i+1} - 公钥: ${peerPublicKey.substring(0, 10)}... 允许IP: ${allowedIPs}`);
+              
+              // 给这个peer生成私钥
+              const peerKeyResult = await ssh.execCommand('wg genkey');
+              const peerPrivateKey = peerKeyResult.stdout.trim();
+              
+              // 创建客户端配置
+              const clientConfig = `[Interface]
+PrivateKey = ${peerPrivateKey}
+Address = ${allowedIPs}
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = ${serverPublicKeyMatch[1]}
+Endpoint = ${publicIP}:${listenPortMatch[1]}
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+`;
+              // 保存客户端配置
+              const peerNumber = i + 1;
+              await ssh.execCommand(`echo '${clientConfig.replace(/'/g, "'\\''")}' > /root/VPS配置WG/${instanceName}-peer${peerNumber}-client.conf`);
+              
+              peers.push({
+                number: peerNumber.toString(),
+                file: `/root/VPS配置WG/${instanceName}-peer${peerNumber}-client.conf`,
+                address: allowedIPs,
+                publicKey: peerPublicKey,
+                config: clientConfig
+              });
+              
+              console.log(`已为${instanceName}创建客户端配置文件: peer${peerNumber}`);
+            }
+          }
+        } else {
+          console.log('未能提取足够的信息来创建客户端配置');
+        }
+      } else {
+        console.log(`无法从wg命令获取${instanceName}的peer信息`);
+      }
+    } else {
+      // 处理找到的peer配置文件
       const peerFiles = peersResult.stdout.split('\n').filter(line => line.trim() !== '');
+      console.log(`找到${peerFiles.length}个peer配置文件`);
       
       for (const peerFile of peerFiles) {
         const peerNameMatch = peerFile.match(/-peer(\d+)-client\.conf$/);
@@ -352,6 +651,42 @@ async function getWireguardInstanceDetails(ssh, instanceName) {
               publicKey: publicKeyMatch ? publicKeyMatch[1] : '未知',
               config: peerContentResult.stdout
             });
+            console.log(`已读取peer${peerNumber}配置`);
+          }
+        }
+      }
+    }
+    
+    // 如果peers仍然为空，查找任何包含peer的配置文件作为最后的尝试
+    if (peers.length === 0) {
+      console.log(`通过常规方法未找到peer，尝试搜索任何peer相关配置文件`);
+      const anyPeerResult = await ssh.execCommand(`find /root -name "*peer*-client.conf" | sort`);
+      
+      if (anyPeerResult.stdout && anyPeerResult.stdout.trim() !== '') {
+        const anyPeerFiles = anyPeerResult.stdout.split('\n').filter(line => line.trim() !== '');
+        console.log(`找到${anyPeerFiles.length}个可能的peer配置文件`);
+        
+        for (const peerFile of anyPeerFiles) {
+          // 提取peer编号
+          const peerNameMatch = peerFile.match(/-peer(\d+)-client\.conf$/);
+          if (peerNameMatch) {
+            const peerNumber = peerNameMatch[1];
+            const peerContentResult = await ssh.execCommand(`cat "${peerFile}"`);
+            
+            if (peerContentResult.stdout) {
+              // 从配置中提取关键信息
+              const addressMatch = peerContentResult.stdout.match(/Address\s*=\s*([0-9a-fA-F:.\/]+)/);
+              const publicKeyMatch = peerContentResult.stdout.match(/PublicKey\s*=\s*([A-Za-z0-9+\/=]+)/);
+              
+              peers.push({
+                number: peerNumber,
+                file: peerFile,
+                address: addressMatch ? addressMatch[1] : '未知',
+                publicKey: publicKeyMatch ? publicKeyMatch[1] : '未知',
+                config: peerContentResult.stdout
+              });
+              console.log(`已读取额外查找的peer${peerNumber}配置: ${peerFile}`);
+            }
           }
         }
       }
@@ -359,44 +694,221 @@ async function getWireguardInstanceDetails(ssh, instanceName) {
     
     // 提取端口映射范围
     let portMappingRange = null;
-    if (configResult.stdout) {
+    // 首先使用iptables命令直接检查实际映射的端口
+    const iptablesResult = await ssh.execCommand(`iptables -t nat -L PREROUTING -n --line-numbers | grep -E 'dpt:(5[0-9]{4}|51[0-9]{3}|52[0-9]{3}|dpt:55[0-9]{3}|dpt:56[0-9]{3})' | grep -i udp || echo ""`);
+    console.log('iptables端口映射检查结果:', iptablesResult.stdout || '未找到映射规则');
+
+    // 尝试从iptables输出提取端口映射
+    if (iptablesResult.stdout && !iptablesResult.stdout.includes("No such file or directory")) {
+      // 提取所有端口
+      const portMatches = iptablesResult.stdout.match(/dpt:(\d+)/g);
+      if (portMatches && portMatches.length > 0) {
+        const ports = portMatches.map(match => parseInt(match.replace('dpt:', '')));
+        ports.sort((a, b) => a - b);
+        
+        // 检查是否有55835-56834范围内的端口
+        const inRangePorts = ports.filter(p => p >= 55835 && p <= 56834);
+        
+        if (inRangePorts.length > 0) {
+          // 优先使用55835-56834范围内的端口
+          const startPort = inRangePorts[0];
+          const endPort = inRangePorts[inRangePorts.length - 1];
+          
+          portMappingRange = {
+            start: startPort,
+            end: endPort,
+            count: inRangePorts.length,
+            note: '从iptables规则提取的55835-56834范围端口'
+          };
+          console.log(`从iptables规则提取到55835-56834范围内的端口: ${startPort}-${endPort}，共${inRangePorts.length}个端口`);
+        } else {
+          // 使用所有找到的端口
+          const startPort = ports[0];
+          const endPort = ports[ports.length - 1];
+          
+          portMappingRange = {
+            start: startPort,
+            end: endPort,
+            count: ports.length,
+            note: '从iptables规则提取的实际映射端口'
+          };
+          console.log(`从iptables规则提取到端口映射范围: ${startPort}-${endPort}，共${ports.length}个端口`);
+        }
+      }
+    }
+
+    // 如果iptables未找到，再检查配置文件
+    if (!portMappingRange && configData) {
+      console.log('尝试从配置数据提取端口映射范围...');
       // 从PostUp命令中提取端口映射范围
-      const portRangeMatch = configResult.stdout.match(/for port in \\\$\(seq (\d+) (\d+)\);/);
+      const portRangeMatch = configData.match(/for port in \\\$\(seq (\d+) (\d+)\);/);
       if (portRangeMatch) {
         portMappingRange = {
           start: parseInt(portRangeMatch[1]),
           end: parseInt(portRangeMatch[2]),
-          count: parseInt(portRangeMatch[2]) - parseInt(portRangeMatch[1]) + 1
+          count: parseInt(portRangeMatch[2]) - parseInt(portRangeMatch[1]) + 1,
+          note: '从配置文件PostUp规则中提取'
         };
-      }
-      
-      // 如果没有从配置中找到，尝试根据实例名称计算
-      if (!portMappingRange) {
-        // 从实例名称中提取数字，例如从wg0提取0
-        const instanceNumberMatch = instanceName.match(/wg(\d+)/);
-        if (instanceNumberMatch) {
-          const instanceNumber = parseInt(instanceNumberMatch[1]);
-          const startPort = 55835 + instanceNumber * 1000;
-          const endPort = startPort + 999;
+        console.log(`从配置文件提取到端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
+      } else {
+        console.log('未从配置中找到端口映射范围，尝试检查其他格式的端口映射命令');
+        
+        // 尝试匹配其他常见的端口映射格式
+        const altPortMatch1 = configData.match(/iptables.*-p.*--dport\s+(\d+).*-j/);
+        const altPortMatch2 = configData.match(/iptables.*-p.*--dport\s+(\d+):(\d+).*-j/);
+        
+        if (altPortMatch2) {
+          // 范围端口格式 --dport 51820:52820
           portMappingRange = {
-            start: startPort,
-            end: endPort,
-            count: 1000,
-            note: '根据实例名称推算的映射范围'
+            start: parseInt(altPortMatch2[1]),
+            end: parseInt(altPortMatch2[2]),
+            count: parseInt(altPortMatch2[2]) - parseInt(altPortMatch2[1]) + 1,
+            note: '从配置文件iptables规则提取的端口范围'
           };
+          console.log(`从配置文件iptables规则中提取到端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
+        } else if (altPortMatch1) {
+          // 单端口格式 --dport 51820
+          portMappingRange = {
+            start: parseInt(altPortMatch1[1]),
+            end: parseInt(altPortMatch1[1]),
+            count: 1,
+            note: '从配置文件iptables规则提取的单一端口'
+          };
+          console.log(`从配置文件iptables规则中提取到单一端口映射: ${portMappingRange.start}`);
         }
       }
     }
+
+    // 如果前面方法都未找到，尝试使用nftables检查映射
+    if (!portMappingRange) {
+      console.log('尝试使用nftables检查端口映射...');
+      const nftResult = await ssh.execCommand(`nft list ruleset 2>/dev/null | grep -E '51[0-9]{3}|52[0-9]{3}' | grep -i udp`);
+      
+      if (nftResult.stdout) {
+        // 提取所有端口
+        const nftPortMatches = nftResult.stdout.match(/(\d{5})/g);
+        if (nftPortMatches && nftPortMatches.length > 0) {
+          const nftPorts = nftPortMatches.map(match => parseInt(match)).filter(port => port >= 51000 && port <= 52999);
+          nftPorts.sort((a, b) => a - b);
+          
+          if (nftPorts.length > 0) {
+            const startPort = nftPorts[0];
+            const endPort = nftPorts[nftPorts.length - 1];
+            
+            portMappingRange = {
+              start: startPort,
+              end: endPort,
+              count: nftPorts.length,
+              note: '从nftables规则提取的端口映射'
+            };
+            console.log(`从nftables规则提取到端口映射范围: ${startPort}-${endPort}，共${nftPorts.length}个端口`);
+          }
+        }
+      }
+    }
+
+    // 检查Wireguard监听端口并匹配端口转发规则
+    if (!portMappingRange) {
+      const forwardingResult = await ssh.execCommand(`
+        # 获取Wireguard监听端口
+        WG_PORT=$(wg show ${instanceName} listen-port 2>/dev/null || echo "51820")
+        
+        # 检查iptables转发规则
+        MAPPING_RULES=$(iptables -t nat -nL | grep -E "dpt:[0-9]+ to:[0-9]+\\.${WG_PORT}" || echo "")
+        
+        # 如果找到规则，提取外部端口
+        if [ -n "$MAPPING_RULES" ]; then
+          echo "Found port mapping from external port to Wireguard port $WG_PORT"
+          echo "$MAPPING_RULES"
+        else
+          # 尝试使用ss命令检查监听UDP端口
+          echo "Checking listening UDP ports:"
+          ss -lunp | grep -E '51[0-9]{3}|52[0-9]{3}'
+        fi
+      `);
+      
+      if (forwardingResult.stdout && !forwardingResult.stdout.includes("Checking listening UDP ports:")) {
+        // 提取端口映射规则中的外部端口
+        const extPortMatch = forwardingResult.stdout.match(/dpt:(\d+)/);
+        if (extPortMatch) {
+          const extPort = parseInt(extPortMatch[1]);
+          portMappingRange = {
+            start: extPort,
+            end: extPort,
+            count: 1,
+            note: '从端口转发规则提取的映射端口'
+          };
+          console.log(`从端口转发规则提取到映射端口: ${extPort}`);
+        }
+      } else if (forwardingResult.stdout && forwardingResult.stdout.includes(":51")) {
+        // 提取ss命令显示的监听端口
+        const listeningPortMatches = forwardingResult.stdout.match(/:[0-9]{5}/g);
+        if (listeningPortMatches && listeningPortMatches.length > 0) {
+          const listeningPorts = listeningPortMatches
+            .map(p => parseInt(p.replace(':', '')))
+            .filter(p => p >= 51000 && p <= 52999);
+          
+          if (listeningPorts.length > 0) {
+            listeningPorts.sort((a, b) => a - b);
+            const startPort = listeningPorts[0];
+            const endPort = listeningPorts[listeningPorts.length - 1];
+            
+            portMappingRange = {
+              start: startPort,
+              end: endPort,
+              count: listeningPorts.length,
+              note: '从监听端口列表提取'
+            };
+            console.log(`从监听端口列表提取到端口范围: ${startPort}-${endPort}，共${listeningPorts.length}个端口`);
+          }
+        }
+      }
+    }
+
+    // 如果所有方法都未检测到，尝试根据实例名称推算
+    if (!portMappingRange) {
+      console.log(`未检测到映射配置，尝试根据实例名称推算`);
+      
+      // 从实例名称中提取数字，例如从wg0提取0
+      const instanceNumberMatch = instanceName.match(/wg(\d+)/);
+      if (instanceNumberMatch) {
+        const instanceNumber = parseInt(instanceNumberMatch[1]);
+        // 使用特定的计算公式：基础端口 + instanceNumber * 1000
+        const startPort = 55835 + instanceNumber * 1000;
+        const endPort = startPort + 999;
+        
+        portMappingRange = {
+          start: startPort,
+          end: endPort,
+          count: 1000,
+          note: '根据实例名称推算的端口范围'
+        };
+        console.log(`根据实例名称[${instanceName}]推算端口范围: ${portMappingRange.start}-${portMappingRange.end}`);
+      } else {
+        // 默认fallback到listenPort作为单端口映射
+        console.log(`无法从实例名称[${instanceName}]推算端口范围，使用监听端口 ${listenPort}`);
+        portMappingRange = {
+          start: parseInt(listenPort),
+          end: parseInt(listenPort),
+          count: 1,
+          note: '使用Wireguard监听端口作为映射端口'
+        };
+      }
+    }
     
+    // 综合所有信息
+    console.log(`完成${instanceName}实例详情获取，找到${peers.length}个peer`);
     return {
       name: instanceName,
-      config: configResult.stdout,
-      status: statusResult.stdout,
-      peers: peers,
-      portMappingRange: portMappingRange
+      status: formattedStatus,
+      config: configData,
+      publicIP: publicIP,
+      listenPort: listenPort,
+      portMappingRange: portMappingRange,
+      peers: peers
     };
   } catch (error) {
-    console.error(`获取Wireguard实例 ${instanceName} 详细信息失败:`, error);
+    console.error(`获取Wireguard实例详情失败:`, error);
     throw new Error(`获取Wireguard实例 ${instanceName} 详细信息失败: ${error.message}`);
   }
 }
@@ -2183,6 +2695,246 @@ ipcMain.handle('delete-wireguard-peer', async (event, serverId, instanceName, pe
     return {
       success: false,
       error: `删除peer失败: ${error.message}`
+    };
+  }
+});
+
+// 强制同步客户端配置到Wireguard模块
+ipcMain.handle('force-sync-wireguard-client-configs', async (event, serverId) => {
+  if (!activeSSHConnections.has(serverId)) {
+    // 尝试连接服务器
+    const servers = store.get('servers') || [];
+    const server = servers.find(s => s.id === serverId);
+    
+    if (!server) {
+      return { success: false, error: '找不到服务器' };
+    }
+    
+    // 连接SSH
+    const connectionResult = await connectToSSH(server);
+    
+    if (!connectionResult.success) {
+      return connectionResult;
+    }
+    
+    // 存储连接信息
+    activeSSHConnections.set(serverId, { ssh: connectionResult.ssh, server });
+  }
+  
+  const { ssh } = activeSSHConnections.get(serverId);
+  
+  try {
+    console.log('开始强制同步Wireguard客户端配置...');
+    
+    // 1. 在各个常见位置查找客户端配置文件
+    const clientConfigs = [];
+    
+    // 搜索多个位置的客户端配置文件
+    console.log('搜索客户端配置文件中...');
+    const locations = [
+      '/root/VPS配置WG', 
+      '/etc/wireguard',
+      '/root'
+    ];
+    
+    for (const location of locations) {
+      console.log(`在 ${location} 中查找客户端配置...`);
+      const result = await ssh.execCommand(`find ${location} -name "*-peer*-client.conf" -o -name "*peer*.conf" -o -name "wg*_client.conf" 2>/dev/null || echo ""`);
+      
+      if (result.stdout.trim()) {
+        console.log(`在 ${location} 找到配置文件: ${result.stdout.split('\n').length} 个`);
+        
+        // 读取每个配置文件
+        const files = result.stdout.split('\n').filter(f => f.trim());
+        for (const file of files) {
+          const readResult = await ssh.execCommand(`cat "${file}"`);
+          if (readResult.stdout && readResult.stdout.includes('[Interface]') && readResult.stdout.includes('[Peer]')) {
+            clientConfigs.push({
+              path: file,
+              content: readResult.stdout
+            });
+            console.log(`提取配置: ${file}`);
+          }
+        }
+      } else {
+        console.log(`在 ${location} 未找到客户端配置文件`);
+      }
+    }
+    
+    // 2. 从配置文件中提取实例信息
+    console.log(`共找到 ${clientConfigs.length} 个有效客户端配置文件`);
+    const instancesMap = new Map();
+    let hasWg0 = false;
+    
+    for (const config of clientConfigs) {
+      // 提取实例名称 (通常配置文件名为 wg0-peer1-client.conf)
+      let instanceName = 'wg0'; // 默认实例名
+      
+      // 尝试从文件路径中提取实例名
+      const instanceMatch = config.path.match(/([^\/]+)-peer\d+-client\.conf$/);
+      if (instanceMatch && instanceMatch[1]) {
+        instanceName = instanceMatch[1];
+        console.log(`从配置文件 ${config.path} 提取到实例名: ${instanceName}`);
+      } else {
+        console.log(`未能从 ${config.path} 提取实例名，使用默认名称 wg0`);
+      }
+      
+      if (instanceName === 'wg0') {
+        hasWg0 = true;
+      }
+      
+      // 保存实例与配置文件的映射关系
+      if (!instancesMap.has(instanceName)) {
+        instancesMap.set(instanceName, []);
+      }
+      instancesMap.get(instanceName).push(config);
+    }
+    
+    // 如果没有找到任何实例，但有客户端配置，使用默认的wg0实例
+    if (instancesMap.size === 0 && clientConfigs.length > 0) {
+      instancesMap.set('wg0', clientConfigs);
+      hasWg0 = true;
+    }
+    
+    // 如果没有任何配置文件和实例
+    if (clientConfigs.length === 0) {
+      console.log('未找到任何客户端配置文件，无法同步');
+      return {
+        success: false,
+        error: '未找到任何客户端配置文件，请先部署Wireguard或手动创建配置'
+      };
+    }
+    
+    // 3. 为每个实例创建或更新服务器配置文件
+    const instances = [];
+    
+    for (const [instanceName, configs] of instancesMap.entries()) {
+      console.log(`处理实例 ${instanceName} 的 ${configs.length} 个配置...`);
+      
+      // 检查是否存在服务器配置
+      const serverConfigCheck = await ssh.execCommand(`test -f /etc/wireguard/${instanceName}.conf && echo "exists" || echo "not exists"`);
+      let createServerConfig = serverConfigCheck.stdout.trim() === 'not exists';
+      
+      if (createServerConfig) {
+        console.log(`实例 ${instanceName} 的服务器配置不存在，创建新配置`);
+        
+        // 从第一个客户端配置获取服务器信息
+        const firstConfig = configs[0];
+        
+        // 提取服务器公钥和端口
+        const serverPublicKey = firstConfig.content.match(/PublicKey\s*=\s*([A-Za-z0-9+\/=]+)/);
+        const endpointMatch = firstConfig.content.match(/Endpoint\s*=\s*([^:]+):(\d+)/);
+        const clientAddressMatch = firstConfig.content.match(/Address\s*=\s*([0-9.\/]+)/);
+        
+        if (serverPublicKey && endpointMatch && clientAddressMatch) {
+          console.log(`从客户端配置中提取了服务器信息: ${endpointMatch[1]}:${endpointMatch[2]}`);
+          
+          // 生成服务器私钥
+          const keyGenResult = await ssh.execCommand(`
+            cd /root/VPS配置WG
+            mkdir -p /root/VPS配置WG
+            if [ ! -f "${instanceName}-server.key" ]; then
+              wg genkey > ${instanceName}-server.key
+            fi
+            cat ${instanceName}-server.key
+          `);
+          
+          if (keyGenResult.stdout) {
+            const serverPrivKey = keyGenResult.stdout.trim();
+            console.log(`服务器私钥已生成或获取`);
+            
+            // 构建服务器地址 (通常是 10.0.0.1/24 如果客户端是 10.0.0.2/24)
+            const serverAddress = clientAddressMatch[1].replace(/\.\d+\//, '.1/');
+            console.log(`服务器地址: ${serverAddress}`);
+            
+            // 创建基本服务器配置
+            const serverConfig = `[Interface]
+PrivateKey = ${serverPrivKey}
+Address = ${serverAddress}
+ListenPort = ${endpointMatch[2]}
+# 根据客户端配置生成的服务器配置
+
+`;
+            
+            // 为每个客户端创建Peer配置
+            let peerConfigs = '';
+            for (let i = 0; i < configs.length; i++) {
+              const config = configs[i];
+              const peerNumber = i + 1;
+              
+              // 从客户端配置中提取私钥和IP
+              const privateKeyMatch = config.content.match(/PrivateKey\s*=\s*([A-Za-z0-9+\/=]+)/);
+              const addressMatch = config.content.match(/Address\s*=\s*([0-9.\/]+)/);
+              
+              if (privateKeyMatch && addressMatch) {
+                // 使用wg命令从私钥计算公钥
+                const pubKeyResult = await ssh.execCommand(`echo "${privateKeyMatch[1]}" | wg pubkey`);
+                if (pubKeyResult.stdout) {
+                  const peerPubKey = pubKeyResult.stdout.trim();
+                  console.log(`计算得到peer${peerNumber}的公钥`);
+                  
+                  // 添加Peer配置
+                  peerConfigs += `[Peer] # peer${peerNumber}
+PublicKey = ${peerPubKey}
+AllowedIPs = ${addressMatch[1]}
+
+`;
+                }
+              }
+            }
+            
+            // 将配置写入文件
+            const finalConfig = serverConfig + peerConfigs;
+            console.log(`完成服务器配置生成，准备写入`);
+            
+            const writeConfigResult = await ssh.execCommand(`
+              mkdir -p /etc/wireguard
+              echo '${finalConfig.replace(/'/g, "'\\''")}' > /etc/wireguard/${instanceName}.conf
+              chmod 600 /etc/wireguard/${instanceName}.conf
+              echo "配置已写入"
+            `);
+            
+            console.log(`写入配置结果: ${writeConfigResult.stdout}`);
+            
+            // 尝试创建wireguard服务并启动
+            await ssh.execCommand(`
+              systemctl enable wg-quick@${instanceName} 2>/dev/null || true
+              systemctl restart wg-quick@${instanceName} 2>/dev/null || true
+              wg-quick up ${instanceName} 2>/dev/null || true
+            `);
+            
+            console.log(`已尝试启动服务: ${instanceName}`);
+          } else {
+            console.log(`无法生成服务器私钥`);
+          }
+        } else {
+          console.log(`无法从客户端配置中提取必要的服务器信息`);
+        }
+      } else {
+        console.log(`实例 ${instanceName} 的服务器配置已存在，保持不变`);
+      }
+      
+      // 添加实例到列表
+      instances.push(instanceName);
+    }
+    
+    // 优先返回wg0实例
+    if (hasWg0 && !instances.includes('wg0')) {
+      instances.unshift('wg0');
+    }
+    
+    console.log(`强制同步完成，找到以下实例: ${instances.join(', ')}`);
+    
+    return {
+      success: true,
+      message: '已强制同步Wireguard客户端配置',
+      instances: instances
+    };
+  } catch (error) {
+    console.error('强制同步Wireguard客户端配置失败:', error);
+    return {
+      success: false,
+      error: '强制同步失败: ' + error.message
     };
   }
 });
