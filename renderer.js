@@ -499,7 +499,16 @@ createApp({
             await this.generateQRCodeFromConfig(result.clientConfig);
           }
           
-          alert('Wireguard已自动部署完成！');
+          // 处理警告信息
+          if (result.warning) {
+            // 显示成功但有警告的消息
+            alert(`Wireguard部署状态: ${result.warning}`);
+          } else {
+            alert('Wireguard已自动部署完成！');
+          }
+        } else {
+          // 显示错误信息
+          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
         }
       } catch (error) {
         console.error('部署Wireguard失败:', error);
@@ -507,6 +516,7 @@ createApp({
           success: false,
           error: error.message || '未知错误'
         };
+        alert(`部署过程中发生错误: ${error.message || '未知错误'}\n这可能是临时性问题，请稍后通过SSH终端检查部署状态。`);
       } finally {
         this.isDeploying = false;
       }
@@ -1929,6 +1939,53 @@ createApp({
         };
       } finally {
         this.addingPeer = false;
+      }
+    },
+    
+    // Wireguard peer管理相关方法
+    async deployWireguard(serverId) {
+      if (!serverId) return;
+      
+      try {
+        this.isDeploying = true;
+        this.deployingServerId = serverId;
+        this.wireguardResult = null;
+        this.deployProgress = { percent: 0, message: '准备部署Wireguard...' };
+        
+        const result = await window.electronAPI.deployWireguard(serverId);
+        console.log('Wireguard部署结果:', result);
+        
+        this.wireguardResult = result;
+        
+        if (result.success && result.clientConfigs && result.clientConfigs.length > 0) {
+          this.clientConfigs = result.clientConfigs;
+          this.showConfigFile(0);
+        }
+        
+        // 刷新实例列表
+        if (result.success) {
+          await this.loadWireguardInstances();
+          
+          // 处理警告信息
+          if (result.warning) {
+            // 显示成功但有警告的消息
+            alert(`Wireguard部署状态: ${result.warning}`);
+          } else {
+            alert('Wireguard已自动部署完成！');
+          }
+        } else {
+          // 显示错误信息
+          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
+        }
+      } catch (error) {
+        console.error('部署Wireguard失败:', error);
+        this.wireguardResult = {
+          success: false,
+          error: error.message || '未知错误'
+        };
+        alert(`部署过程中发生错误: ${error.message || '未知错误'}\n这可能是临时性问题，请稍后通过SSH终端检查部署状态。`);
+      } finally {
+        this.isDeploying = false;
       }
     },
   }

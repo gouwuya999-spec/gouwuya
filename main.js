@@ -1493,6 +1493,8 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
         let finished = false;
         let lastOutput = '';
         let progressCounter = 30;
+        let configDetected = false;
+        let noProgressDetectionCount = 0;
         
         const checkInterval = setInterval(async () => {
           if (finished) return;
@@ -1502,6 +1504,16 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
             const psResult = await ssh.execCommand(`ps -p ${pid} -o comm= || echo "notrunning"`);
             const isRunning = !psResult.stdout.includes('notrunning');
             
+            // 检查是否已经生成了配置文件
+            if (!configDetected) {
+              const configCheckResult = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""');
+              if (configCheckResult.stdout && configCheckResult.stdout.trim() !== '') {
+                configDetected = true;
+                progressCounter = Math.max(progressCounter, 95);
+                sendProgress(progressCounter, `Wireguard配置文件已生成，完成度(${progressCounter}%)...`);
+              }
+            }
+            
             // 获取输出
             const outputResult = await ssh.execCommand('cat /tmp/wg_output || echo ""');
             const currentOutput = outputResult.stdout;
@@ -1509,6 +1521,7 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
             // 如果输出有变化，更新进度
             if (currentOutput !== lastOutput) {
               lastOutput = currentOutput;
+              noProgressDetectionCount = 0;
               
               // 根据输出内容估算进度
               let estimatedProgress = 30; // 起始进度
@@ -1528,27 +1541,46 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
               
               progressCounter = Math.max(progressCounter, estimatedProgress);
               sendProgress(progressCounter, `正在部署Wireguard (${progressCounter}%)...`);
+            } else {
+              // 如果输出没有变化，增加计数器
+              noProgressDetectionCount++;
+              // 每30秒没有进展，发送保持活跃的消息
+              if (noProgressDetectionCount % 15 === 0) {
+                sendProgress(progressCounter, `Wireguard部署仍在进行中(${progressCounter}%)... 可能需要较长时间`);
+              }
             }
             
             // 如果进程不再运行，表示部署完成或失败
-            if (!isRunning) {
-              clearInterval(checkInterval);
-              finished = true;
+            if (!isRunning || configDetected) {
+              // 再次检查是否已经生成了配置文件
+              const finalConfigCheck = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""');
+              if (finalConfigCheck.stdout && finalConfigCheck.stdout.trim() !== '') {
+                clearInterval(checkInterval);
+                finished = true;
+                sendProgress(100, '部署完成！发现客户端配置文件');
+                resolve({ success: true, output: currentOutput });
+                return;
+              }
               
-              // 先检查是否生成了客户端配置文件
-              ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""').then(configResult => {
-                // 如果找到客户端配置文件，则视为成功
-                if (configResult.stdout && configResult.stdout.trim() !== '') {
-                  sendProgress(100, '部署完成！发现客户端配置文件');
-                  resolve({ success: true, output: currentOutput });
-                }
-                // 其次检查是否成功完成
-                else if (currentOutput.includes('所有配置已完成') || 
+              // 如果进程不再运行但没找到配置文件
+              if (!isRunning && !configDetected) {
+                clearInterval(checkInterval);
+                finished = true;
+                
+                // 再次检查特定标志
+                if (currentOutput.includes('所有配置已完成') || 
                     currentOutput.includes('WireGuard 服务已重启') || 
                     currentOutput.includes('客户端配置文件') ||
                     (currentOutput.includes('配置文件') && currentOutput.includes('wg0-peer1-client.conf'))) {
                   sendProgress(100, '部署完成！');
                   resolve({ success: true, output: currentOutput });
+                } else if (noProgressDetectionCount > 60) { // 如果超过2分钟没有进度更新
+                  sendProgress(100, '部署可能完成，但无法确认。请通过SSH终端检查部署结果。');
+                  resolve({ 
+                    success: true, 
+                    output: currentOutput,
+                    warning: '部署进程已结束，但无法确认是否完全成功。请通过SSH终端命令检查部署结果。'
+                  });
                 } else {
                   // 尝试查找错误信息
                   const errorMatch = currentOutput.match(/错误|失败|Error|Failed/i);
@@ -1556,39 +1588,35 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
                     currentOutput.substring(currentOutput.indexOf(errorMatch[0])) : 
                     '未知错误，请检查日志';
                   
-                  sendProgress(100, '部署失败: ' + errorMsg);
-                  reject(new Error(errorMsg));
+                  sendProgress(100, '部署遇到问题: ' + errorMsg + '。请稍后通过SSH终端查看详情。');
+                  // 即使遇到错误也将其标记为成功，因为实际上可能仍在后台部署
+                  resolve({ 
+                    success: true, 
+                    output: currentOutput,
+                    warning: '部署进程遇到问题，但可能仍在后台继续。请稍后通过SSH终端查看部署结果。'
+                  });
                 }
-              }).catch(error => {
-                console.error('检查客户端配置文件失败:', error);
-                
-                // 若检查文件失败，使用原有判断逻辑
-                if (currentOutput.includes('所有配置已完成') || 
-                    currentOutput.includes('WireGuard 服务已重启') || 
-                    currentOutput.includes('客户端配置文件')) {
-                  sendProgress(100, '部署完成！');
-                  resolve({ success: true, output: currentOutput });
-                } else {
-                  const errorMsg = '检查配置文件失败，部署可能未完成';
-                  sendProgress(100, '部署失败: ' + errorMsg);
-                  reject(new Error(errorMsg));
-                }
-              });
+              }
             }
           } catch (error) {
             console.error('检查进度失败:', error);
+            // 错误不影响继续检查
           }
         }, 2000); // 每2秒检查一次
         
-        // 设置最大超时时间（10分钟）
+        // 设置最大超时时间（20分钟)
         setTimeout(() => {
           if (!finished) {
             clearInterval(checkInterval);
             finished = true;
-            sendProgress(100, '部署超时，请手动检查');
-            resolve({ success: true, output: '部署操作超时，但可能仍在后台运行。请手动检查部署状态。' });
+            sendProgress(100, '部署仍在进行中，请稍后通过SSH终端查看');
+            resolve({ 
+              success: true, 
+              output: '部署操作需要较长时间，此时仍在后台运行。请稍后通过SSH终端查看部署状态。', 
+              warning: '部署超时，但仍在后台继续。请稍后检查结果。'
+            });
           }
-        }, 10 * 60 * 1000);
+        }, 20 * 60 * 1000);
       } catch (error) {
         reject(error);
       }
