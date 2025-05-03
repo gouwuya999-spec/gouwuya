@@ -136,6 +136,20 @@ createApp({
     }
   },
   
+  // 添加watch选项，监听实例选择变化
+  watch: {
+    // 当选择的实例改变时，立即加载实例详情
+    wireguardSelectedInstance: {
+      handler: function(newInstance, oldInstance) {
+        if (newInstance && newInstance !== oldInstance) {
+          console.log(`Wireguard实例已切换: ${oldInstance} -> ${newInstance}，重新加载详情`);
+          this.loadInstanceDetails();
+        }
+      },
+      immediate: false
+    }
+  },
+  
   methods: {
     // 获取应用版本号
     async getAppVersion() {
@@ -1832,7 +1846,7 @@ createApp({
       
       try {
         this.wireguardLoading = true;
-        this.wireguardInstanceDetails = null;
+        this.wireguardInstanceDetails = null; // 清除之前的实例详情
         this.viewingPeer = null;
         this.viewPeerQrCode = null;
         this.peerResult = null;
@@ -1847,8 +1861,10 @@ createApp({
         console.log('加载实例详情结果:', result);
         
         if (result.success) {
-          this.wireguardInstanceDetails = result.details;
-          console.log('实例详情加载成功:', JSON.stringify(result.details, null, 2));
+          // 完全替换详情对象，确保端口映射范围等数据被更新
+          this.wireguardInstanceDetails = JSON.parse(JSON.stringify(result.details));
+          console.log('实例详情加载成功:', JSON.stringify(this.wireguardInstanceDetails, null, 2));
+          console.log('端口映射范围:', this.wireguardInstanceDetails.portMappingRange);
           
           // 检查是否有peer配置
           if (result.details.peers && result.details.peers.length > 0) {
@@ -1865,8 +1881,9 @@ createApp({
                 this.wireguardSelectedInstance
               );
               if (refreshResult.success) {
-                this.wireguardInstanceDetails = refreshResult.details;
+                this.wireguardInstanceDetails = JSON.parse(JSON.stringify(refreshResult.details));
                 console.log('重新加载实例详情成功:', refreshResult.details);
+                console.log('更新后的端口映射范围:', this.wireguardInstanceDetails.portMappingRange);
               }
             }
           }

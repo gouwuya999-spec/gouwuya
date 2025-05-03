@@ -7,16 +7,75 @@
   <!-- 引入Font Awesome图标库 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
   <style>
+    /* 全局样式 */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f6f9;
+    }
+    
+    /* 应用容器 */
+    #app {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    /* 端口映射范围样式 */
+    .multiple-port-ranges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+    
+    .port-range-item {
+      background-color: #f0f8ff;
+      border: 1px solid #c2e0ff;
+      border-radius: 6px;
+      padding: 10px 15px;
+      min-width: 200px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .port-range-item h5 {
+      margin-top: 0;
+      color: #0066cc;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 5px;
+      margin-bottom: 10px;
+    }
+    
+    .port-range-item p {
+      margin: 5px 0;
+      font-size: 14px;
+    }
+    
+    .port-range-info {
+      margin-top: 10px;
+      font-style: italic;
+      color: #666;
+    }
+    
+    .note {
+      color: #666;
+      font-style: italic;
+      margin-top: 10px;
+    }
+    
+    /* 头部标题 */
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-    }
-    
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f5f5;
-      color: #333;
     }
     
     .container {
@@ -394,12 +453,6 @@
       font-style: italic;
       margin-top: 5px;
       font-size: 12px;
-    }
-    
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
     }
     
     .container {
@@ -1900,12 +1953,25 @@
               
               <div v-if="wireguardInstanceDetails.portMappingRange" class="port-mapping-range">
                 <h4>端口映射范围</h4>
-                <div class="port-info">
+                <!-- 处理多个端口范围的情况 -->
+                <div v-if="wireguardInstanceDetails.portMappingRange.isMultipleRanges && wireguardInstanceDetails.portMappingRange.ranges" class="multiple-port-ranges">
+                  <div v-for="(range, index) in wireguardInstanceDetails.portMappingRange.ranges" :key="index" class="port-range-item">
+                    <h5>{{ range.instance }} 端口范围:</h5>
+                    <p><strong>起始端口:</strong> {{ range.start }}</p>
+                    <p><strong>结束端口:</strong> {{ range.end }}</p>
+                    <p><strong>映射端口数量:</strong> {{ range.end - range.start + 1 }}</p>
+                  </div>
+                  <p v-if="wireguardInstanceDetails.portMappingRange.note" class="note">{{ wireguardInstanceDetails.portMappingRange.note }}</p>
+                </div>
+                <!-- 处理单个端口范围的情况 -->
+                <div v-else class="port-info">
                   <p><strong>起始端口:</strong> {{ wireguardInstanceDetails.portMappingRange.start }}</p>
                   <p><strong>结束端口:</strong> {{ wireguardInstanceDetails.portMappingRange.end }}</p>
                   <p><strong>映射端口数量:</strong> {{ wireguardInstanceDetails.portMappingRange.count }}</p>
                   <p v-if="wireguardInstanceDetails.portMappingRange.note" class="note">{{ wireguardInstanceDetails.portMappingRange.note }}</p>
                 </div>
+                <p v-if="wireguardSelectedInstance" class="port-range-info">当前显示的是 <strong>{{ wireguardSelectedInstance }}</strong> 的端口映射范围</p>
+                <button @click="loadInstanceDetails" class="refresh-button">刷新数据</button>
               </div>
               
               <div class="peers-management">
@@ -1966,7 +2032,15 @@
                 
                 <div v-if="wireguardInstanceDetails && wireguardInstanceDetails.portMappingRange" class="port-mapping-info">
                   <h4>端口映射范围</h4>
-                  <p>此Peer可使用的UDP端口映射范围：<strong>{{ wireguardInstanceDetails.portMappingRange.start }}-{{ wireguardInstanceDetails.portMappingRange.end }}</strong></p>
+                  <!-- 处理多个端口范围的情况 -->
+                  <div v-if="wireguardInstanceDetails.portMappingRange.isMultipleRanges && wireguardInstanceDetails.portMappingRange.ranges" class="multiple-port-ranges">
+                    <div v-for="(range, index) in wireguardInstanceDetails.portMappingRange.ranges" :key="index" class="port-range-item">
+                      <p><strong>{{ range.instance }}:</strong> {{ range.start }}-{{ range.end }}</p>
+                    </div>
+                  </div>
+                  <!-- 处理单个端口范围的情况 -->
+                  <p v-else>此Peer可使用的UDP端口映射范围：<strong>{{ wireguardInstanceDetails.portMappingRange.start }}-{{ wireguardInstanceDetails.portMappingRange.end }}</strong></p>
+                  <p class="port-range-info">当前显示的是 <strong>{{ wireguardSelectedInstance }}</strong> 的端口映射范围</p>
                 </div>
                 
                 <div v-if="peerResult.qrCode" class="qr-code-container">
@@ -1999,7 +2073,15 @@
               
               <div v-if="wireguardInstanceDetails && wireguardInstanceDetails.portMappingRange" class="port-mapping-info">
                 <h4>端口映射范围</h4>
-                <p>此Peer可使用的UDP端口映射范围：<strong>{{ wireguardInstanceDetails.portMappingRange.start }}-{{ wireguardInstanceDetails.portMappingRange.end }}</strong></p>
+                <!-- 处理多个端口范围的情况 -->
+                <div v-if="wireguardInstanceDetails.portMappingRange.isMultipleRanges && wireguardInstanceDetails.portMappingRange.ranges" class="multiple-port-ranges">
+                  <div v-for="(range, index) in wireguardInstanceDetails.portMappingRange.ranges" :key="index" class="port-range-item">
+                    <p><strong>{{ range.instance }}:</strong> {{ range.start }}-{{ range.end }}</p>
+                  </div>
+                </div>
+                <!-- 处理单个端口范围的情况 -->
+                <p v-else>此Peer可使用的UDP端口映射范围：<strong>{{ wireguardInstanceDetails.portMappingRange.start }}-{{ wireguardInstanceDetails.portMappingRange.end }}</strong></p>
+                <p class="port-range-info">当前显示的是 <strong>{{ wireguardSelectedInstance }}</strong> 的端口映射范围</p>
               </div>
               
               <div class="peer-qrcode">

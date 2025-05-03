@@ -694,54 +694,13 @@ PersistentKeepalive = 25
     
     // 提取端口映射范围
     let portMappingRange = null;
-    // 首先使用iptables命令直接检查实际映射的端口
-    const iptablesResult = await ssh.execCommand(`iptables -t nat -L PREROUTING -n --line-numbers | grep -E 'dpt:(5[0-9]{4}|51[0-9]{3}|52[0-9]{3}|dpt:55[0-9]{3}|dpt:56[0-9]{3})' | grep -i udp || echo ""`);
-    console.log('iptables端口映射检查结果:', iptablesResult.stdout || '未找到映射规则');
-
-    // 尝试从iptables输出提取端口映射
-    if (iptablesResult.stdout && !iptablesResult.stdout.includes("No such file or directory")) {
-      // 提取所有端口
-      const portMatches = iptablesResult.stdout.match(/dpt:(\d+)/g);
-      if (portMatches && portMatches.length > 0) {
-        const ports = portMatches.map(match => parseInt(match.replace('dpt:', '')));
-        ports.sort((a, b) => a - b);
-        
-        // 检查是否有55835-56834范围内的端口
-        const inRangePorts = ports.filter(p => p >= 55835 && p <= 56834);
-        
-        if (inRangePorts.length > 0) {
-          // 优先使用55835-56834范围内的端口
-          const startPort = inRangePorts[0];
-          const endPort = inRangePorts[inRangePorts.length - 1];
-          
-          portMappingRange = {
-            start: startPort,
-            end: endPort,
-            count: inRangePorts.length,
-            note: '从iptables规则提取的55835-56834范围端口'
-          };
-          console.log(`从iptables规则提取到55835-56834范围内的端口: ${startPort}-${endPort}，共${inRangePorts.length}个端口`);
-        } else {
-          // 使用所有找到的端口
-          const startPort = ports[0];
-          const endPort = ports[ports.length - 1];
-          
-          portMappingRange = {
-            start: startPort,
-            end: endPort,
-            count: ports.length,
-            note: '从iptables规则提取的实际映射端口'
-          };
-          console.log(`从iptables规则提取到端口映射范围: ${startPort}-${endPort}，共${ports.length}个端口`);
-        }
-      }
-    }
-
-    // 如果iptables未找到，再检查配置文件
-    if (!portMappingRange && configData) {
-      console.log('尝试从配置数据提取端口映射范围...');
-      // 从PostUp命令中提取端口映射范围
-      const portRangeMatch = configData.match(/for port in \\\$\(seq (\d+) (\d+)\);/);
+    // 首先从配置文件中提取端口映射范围 - 这是最准确的方法
+    if (configData) {
+      console.log(`尝试从${instanceName}配置文件提取端口映射范围...`);
+      
+      // 从PostUp命令中提取端口映射范围 - 特别查找seq命令，它定义了端口范围
+      // 示例: for port in $(seq 55835 56834); do iptables -t nat -A PREROUTING -p udp --dport $port -j DNAT --to-destination 45.32.157.163:52835; done
+      const portRangeMatch = configData.match(/for port in \$\(seq (\d+) (\d+)\);/);
       if (portRangeMatch) {
         portMappingRange = {
           start: parseInt(portRangeMatch[1]),
@@ -749,150 +708,149 @@ PersistentKeepalive = 25
           count: parseInt(portRangeMatch[2]) - parseInt(portRangeMatch[1]) + 1,
           note: '从配置文件PostUp规则中提取'
         };
-        console.log(`从配置文件提取到端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
-      } else {
-        console.log('未从配置中找到端口映射范围，尝试检查其他格式的端口映射命令');
-        
-        // 尝试匹配其他常见的端口映射格式
-        const altPortMatch1 = configData.match(/iptables.*-p.*--dport\s+(\d+).*-j/);
-        const altPortMatch2 = configData.match(/iptables.*-p.*--dport\s+(\d+):(\d+).*-j/);
-        
-        if (altPortMatch2) {
-          // 范围端口格式 --dport 51820:52820
-          portMappingRange = {
-            start: parseInt(altPortMatch2[1]),
-            end: parseInt(altPortMatch2[2]),
-            count: parseInt(altPortMatch2[2]) - parseInt(altPortMatch2[1]) + 1,
-            note: '从配置文件iptables规则提取的端口范围'
-          };
-          console.log(`从配置文件iptables规则中提取到端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
-        } else if (altPortMatch1) {
-          // 单端口格式 --dport 51820
-          portMappingRange = {
-            start: parseInt(altPortMatch1[1]),
-            end: parseInt(altPortMatch1[1]),
-            count: 1,
-            note: '从配置文件iptables规则提取的单一端口'
-          };
-          console.log(`从配置文件iptables规则中提取到单一端口映射: ${portMappingRange.start}`);
-        }
+        console.log(`从${instanceName}配置文件提取到端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
       }
     }
-
-    // 如果前面方法都未找到，尝试使用nftables检查映射
+    
+    // 如果从配置文件未提取到，尝试使用iptables命令检查实际配置的转发规则
     if (!portMappingRange) {
-      console.log('尝试使用nftables检查端口映射...');
-      const nftResult = await ssh.execCommand(`nft list ruleset 2>/dev/null | grep -E '51[0-9]{3}|52[0-9]{3}' | grep -i udp`);
+      console.log(`尝试使用iptables命令检查${instanceName}的端口映射规则...`);
+      // 使用更精确的命令，查找包含实例名称的端口范围
+      // 注意：使用grep -A和-B来获取上下文，因为实例名可能在注释或相关行中
+      const iptablesGrepResult = await ssh.execCommand(`iptables-save | grep -A 10 -B 10 "${instanceName}" | grep -E "PREROUTING|DNAT" | grep -E "dpt:[0-9]+" || echo ""`);
       
-      if (nftResult.stdout) {
+      if (iptablesGrepResult.stdout && !iptablesGrepResult.stdout.includes("No such file or directory")) {
+        console.log(`找到与${instanceName}相关的iptables规则`);
         // 提取所有端口
-        const nftPortMatches = nftResult.stdout.match(/(\d{5})/g);
-        if (nftPortMatches && nftPortMatches.length > 0) {
-          const nftPorts = nftPortMatches.map(match => parseInt(match)).filter(port => port >= 51000 && port <= 52999);
-          nftPorts.sort((a, b) => a - b);
+        const portMatches = iptablesGrepResult.stdout.match(/dpt:(\d+)/g);
+        if (portMatches && portMatches.length > 0) {
+          const ports = portMatches.map(match => parseInt(match.replace('dpt:', '')));
+          ports.sort((a, b) => a - b);
           
-          if (nftPorts.length > 0) {
-            const startPort = nftPorts[0];
-            const endPort = nftPorts[nftPorts.length - 1];
-            
+          // 计算端口范围
+          const startPort = ports[0];
+          const endPort = ports[ports.length - 1];
+          
+          // 验证这是连续的端口范围
+          const expectedCount = endPort - startPort + 1;
+          const isConsecutive = (ports.length === expectedCount) || 
+                               (expectedCount <= 1100 && ports.length >= 5); // 容许部分端口缺失
+          
+          if (isConsecutive) {
             portMappingRange = {
               start: startPort,
               end: endPort,
-              count: nftPorts.length,
-              note: '从nftables规则提取的端口映射'
+              count: ports.length,
+              note: `从iptables规则中提取的${instanceName}端口映射范围`
             };
-            console.log(`从nftables规则提取到端口映射范围: ${startPort}-${endPort}，共${nftPorts.length}个端口`);
+            console.log(`从iptables规则提取到${instanceName}的端口映射范围: ${startPort}-${endPort}，共${ports.length}个端口`);
           }
         }
-      }
-    }
-
-    // 检查Wireguard监听端口并匹配端口转发规则
-    if (!portMappingRange) {
-      const forwardingResult = await ssh.execCommand(`
-        # 获取Wireguard监听端口
-        WG_PORT=$(wg show ${instanceName} listen-port 2>/dev/null || echo "51820")
-        
-        # 检查iptables转发规则
-        MAPPING_RULES=$(iptables -t nat -nL | grep -E "dpt:[0-9]+ to:[0-9]+\\.${WG_PORT}" || echo "")
-        
-        # 如果找到规则，提取外部端口
-        if [ -n "$MAPPING_RULES" ]; then
-          echo "Found port mapping from external port to Wireguard port $WG_PORT"
-          echo "$MAPPING_RULES"
-        else
-          # 尝试使用ss命令检查监听UDP端口
-          echo "Checking listening UDP ports:"
-          ss -lunp | grep -E '51[0-9]{3}|52[0-9]{3}'
-        fi
-      `);
-      
-      if (forwardingResult.stdout && !forwardingResult.stdout.includes("Checking listening UDP ports:")) {
-        // 提取端口映射规则中的外部端口
-        const extPortMatch = forwardingResult.stdout.match(/dpt:(\d+)/);
-        if (extPortMatch) {
-          const extPort = parseInt(extPortMatch[1]);
-          portMappingRange = {
-            start: extPort,
-            end: extPort,
-            count: 1,
-            note: '从端口转发规则提取的映射端口'
-          };
-          console.log(`从端口转发规则提取到映射端口: ${extPort}`);
-        }
-      } else if (forwardingResult.stdout && forwardingResult.stdout.includes(":51")) {
-        // 提取ss命令显示的监听端口
-        const listeningPortMatches = forwardingResult.stdout.match(/:[0-9]{5}/g);
-        if (listeningPortMatches && listeningPortMatches.length > 0) {
-          const listeningPorts = listeningPortMatches
-            .map(p => parseInt(p.replace(':', '')))
-            .filter(p => p >= 51000 && p <= 52999);
-          
-          if (listeningPorts.length > 0) {
-            listeningPorts.sort((a, b) => a - b);
-            const startPort = listeningPorts[0];
-            const endPort = listeningPorts[listeningPorts.length - 1];
-            
-            portMappingRange = {
-              start: startPort,
-              end: endPort,
-              count: listeningPorts.length,
-              note: '从监听端口列表提取'
-            };
-            console.log(`从监听端口列表提取到端口范围: ${startPort}-${endPort}，共${listeningPorts.length}个端口`);
-          }
-        }
-      }
-    }
-
-    // 如果所有方法都未检测到，尝试根据实例名称推算
-    if (!portMappingRange) {
-      console.log(`未检测到映射配置，尝试根据实例名称推算`);
-      
-      // 从实例名称中提取数字，例如从wg0提取0
-      const instanceNumberMatch = instanceName.match(/wg(\d+)/);
-      if (instanceNumberMatch) {
-        const instanceNumber = parseInt(instanceNumberMatch[1]);
-        // 使用特定的计算公式：基础端口 + instanceNumber * 1000
-        const startPort = 55835 + instanceNumber * 1000;
-        const endPort = startPort + 999;
-        
-        portMappingRange = {
-          start: startPort,
-          end: endPort,
-          count: 1000,
-          note: '根据实例名称推算的端口范围'
-        };
-        console.log(`根据实例名称[${instanceName}]推算端口范围: ${portMappingRange.start}-${portMappingRange.end}`);
       } else {
-        // 默认fallback到listenPort作为单端口映射
-        console.log(`无法从实例名称[${instanceName}]推算端口范围，使用监听端口 ${listenPort}`);
-        portMappingRange = {
-          start: parseInt(listenPort),
-          end: parseInt(listenPort),
-          count: 1,
-          note: '使用Wireguard监听端口作为映射端口'
-        };
+        console.log(`未找到与${instanceName}相关的iptables规则`);
+      }
+    }
+    
+    // 如果前两种方法都未找到，尝试从service文件或其他系统配置文件查找
+    if (!portMappingRange) {
+      console.log(`尝试从systemd服务文件查找${instanceName}端口映射...`);
+      const serviceFileResult = await ssh.execCommand(`systemctl cat wg-quick@${instanceName}.service 2>/dev/null || cat /lib/systemd/system/wg-quick@.service 2>/dev/null || echo ""`);
+      
+      if (serviceFileResult.stdout && serviceFileResult.stdout.includes("ExecStart")) {
+        // 查找PostUp命令引用的脚本
+        const execStartMatch = serviceFileResult.stdout.match(/ExecStart=([^\n]+)/);
+        if (execStartMatch) {
+          const execStartCmd = execStartMatch[1];
+          console.log(`找到${instanceName}服务ExecStart命令: ${execStartCmd}`);
+          
+          // 检查引用的脚本文件
+          if (execStartCmd.includes("wg-quick")) {
+            // 查看wg-quick脚本如何处理端口转发
+            const wgQuickResult = await ssh.execCommand(`journalctl -u wg-quick@${instanceName}.service | grep -E "seq [0-9]+ [0-9]+" | tail -1 || echo ""`);
+            
+            if (wgQuickResult.stdout && wgQuickResult.stdout.includes("seq")) {
+              const seqMatch = wgQuickResult.stdout.match(/seq (\d+) (\d+)/);
+              if (seqMatch) {
+                portMappingRange = {
+                  start: parseInt(seqMatch[1]),
+                  end: parseInt(seqMatch[2]),
+                  count: parseInt(seqMatch[2]) - parseInt(seqMatch[1]) + 1,
+                  note: '从systemd日志提取的端口范围'
+                };
+                console.log(`从systemd日志提取到${instanceName}的端口映射范围: ${portMappingRange.start}-${portMappingRange.end}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 如果所有方法都未检测到，根据实例名称推算（保证不同实例有不同范围）
+    if (!portMappingRange) {
+      console.log(`未检测到${instanceName}的实际映射配置，尝试根据实例名称推算`);
+      
+      // 检查是否为复合实例名称（如 "wg0 wg1 wg2"）
+      if (instanceName.includes(' ')) {
+        // 这是一个复合实例名称，需要处理多个实例的端口范围
+        const instanceNames = instanceName.split(' ').filter(name => name.trim() !== '');
+        const portRanges = [];
+        
+        // 为每个实例计算端口范围
+        for (const singleInstanceName of instanceNames) {
+          const instanceNumberMatch = singleInstanceName.match(/wg(\d+)/);
+          if (instanceNumberMatch) {
+            const instanceNumber = parseInt(instanceNumberMatch[1]);
+            const startPort = 55835 + instanceNumber * 1000;
+            const endPort = startPort + 999;
+            
+            portRanges.push({
+              instance: singleInstanceName,
+              start: startPort,
+              end: endPort
+            });
+          }
+        }
+        
+        // 如果找到了端口范围，返回所有范围
+        if (portRanges.length > 0) {
+          portMappingRange = {
+            ranges: portRanges,
+            isMultipleRanges: true,
+            note: `包含多个实例的端口映射范围`
+          };
+          console.log(`为复合实例[${instanceName}]找到${portRanges.length}个端口范围`);
+          
+          // 同时提供单一范围以保持兼容性（显示第一个实例的范围）
+          portMappingRange.start = portRanges[0].start;
+          portMappingRange.end = portRanges[0].end;
+          portMappingRange.count = 1000;
+        }
+      } else {
+        // 单一实例名称处理（原有逻辑）
+        const instanceNumberMatch = instanceName.match(/wg(\d+)/);
+        if (instanceNumberMatch) {
+          const instanceNumber = parseInt(instanceNumberMatch[1]);
+          // 使用部署脚本中相同的计算公式
+          const startPort = 55835 + instanceNumber * 1000;
+          const endPort = startPort + 999;
+          
+          portMappingRange = {
+            start: startPort,
+            end: endPort,
+            count: 1000,
+            note: `根据实例名称[${instanceName}]推算的端口范围`
+          };
+          console.log(`根据实例名称[${instanceName}]推算端口范围: ${portMappingRange.start}-${portMappingRange.end}`);
+        } else {
+          // 默认fallback到listenPort作为单端口映射
+          console.log(`无法从实例名称[${instanceName}]推算端口范围，使用监听端口 ${listenPort}`);
+          portMappingRange = {
+            start: parseInt(listenPort),
+            end: parseInt(listenPort),
+            count: 1,
+            note: '使用Wireguard监听端口作为映射端口'
+          };
+        }
       }
     }
     
