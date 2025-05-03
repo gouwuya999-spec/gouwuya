@@ -1553,7 +1553,7 @@ createApp({
     },
     
     // IP地址检测功能
-    async detectIpLocation(ip) {
+    async detectIpLocation(ip, batchIndex) {
       if (!ip) {
         alert('请输入IP地址');
         return;
@@ -1594,10 +1594,19 @@ createApp({
             this.editingVps.country = locationInfo;
           } else if (this.showBatchAddVpsModal) {
             // 当前在批量添加VPS界面
-            const lastIndex = this.batchVpsList.length - 1;
-            if (lastIndex >= 0) {
-              this.batchVpsList[lastIndex].ip_address = ip;
-              this.batchVpsList[lastIndex].country = locationInfo;
+            if (batchIndex !== undefined) {
+              // 使用传入的批量添加行索引
+              if (batchIndex >= 0 && batchIndex < this.batchVpsList.length) {
+                this.batchVpsList[batchIndex].ip_address = ip;
+                this.batchVpsList[batchIndex].country = locationInfo;
+              }
+            } else {
+              // 兼容旧逻辑，使用最后一行（不推荐）
+              const lastIndex = this.batchVpsList.length - 1;
+              if (lastIndex >= 0) {
+                this.batchVpsList[lastIndex].ip_address = ip;
+                this.batchVpsList[lastIndex].country = locationInfo;
+              }
             }
           }
           
@@ -1664,7 +1673,7 @@ createApp({
       }
       
       const ip = this.batchVpsList[index].ip_address;
-      const locationInfo = await this.detectIpLocation(ip);
+      const locationInfo = await this.detectIpLocation(ip, index);
       if (locationInfo) {
         this.batchVpsList[index].country = locationInfo;
       }
