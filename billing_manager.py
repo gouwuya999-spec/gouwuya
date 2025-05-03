@@ -849,6 +849,95 @@ class BillingManager:
             worksheet.merge_range(f'A{row_idx + 2}:G{row_idx + 2}', '总计', total_format)
             worksheet.write(row_idx + 1, end_col, total, total_format)
             
+            # 添加统计表格
+            stats_start_row = row_idx + 4  # 留一行空白
+            
+            # 计算NAT和非NAT的VPS数量和金额
+            nat_vps_count = 0
+            nat_vps_cost = 0
+            non_nat_vps_count = 0
+            non_nat_vps_cost = 0
+            
+            for row in bill_rows:
+                if row['是否使用NAT'] == '是':
+                    nat_vps_count += 1
+                    nat_vps_cost += row['合计（$）']
+                else:
+                    non_nat_vps_count += 1
+                    non_nat_vps_cost += row['合计（$）']
+            
+            # 设置表格标题
+            stats_title_format = workbook.add_format({
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter',
+                'bg_color': '#B7DEE8',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 11
+            })
+            
+            worksheet.merge_range(f'A{stats_start_row}:C{stats_start_row}', '账单统计信息', stats_title_format)
+            
+            # 设置表头样式
+            stats_header_format = workbook.add_format({
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter',
+                'bg_color': '#E2EFDA',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 10
+            })
+            
+            # 设置数据样式
+            stats_data_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 10
+            })
+            
+            stats_money_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'font_name': 'Arial',
+                'font_size': 10,
+                'num_format': '$#,##0.00'
+            })
+            
+            # 写入表头
+            worksheet.write(stats_start_row, 0, '类型', stats_header_format)
+            worksheet.write(stats_start_row, 1, '数量', stats_header_format)
+            worksheet.write(stats_start_row, 2, '金额（$）', stats_header_format)
+            
+            # 写入NAT VPS数据
+            worksheet.write(stats_start_row + 1, 0, '使用NAT的VPS', nat_format)
+            worksheet.write(stats_start_row + 1, 1, nat_vps_count, nat_format)
+            worksheet.write(stats_start_row + 1, 2, nat_vps_cost, nat_money_format)
+            
+            # 写入非NAT VPS数据
+            worksheet.write(stats_start_row + 2, 0, '未使用NAT的VPS', non_nat_format)
+            worksheet.write(stats_start_row + 2, 1, non_nat_vps_count, non_nat_format)
+            worksheet.write(stats_start_row + 2, 2, non_nat_vps_cost, non_nat_money_format)
+            
+            # 写入NAT费用行
+            worksheet.write(stats_start_row + 3, 0, 'NAT费用', total_format)
+            worksheet.write(stats_start_row + 3, 1, '-', total_format)
+            worksheet.write(stats_start_row + 3, 2, nat_fee, total_format)
+            
+            # 写入总计行
+            worksheet.write(stats_start_row + 4, 0, '总计', total_format)
+            worksheet.write(stats_start_row + 4, 1, nat_vps_count + non_nat_vps_count, total_format)
+            worksheet.write(stats_start_row + 4, 2, total, total_format)
+            
+            # 设置统计表格区域列宽
+            worksheet.set_column('A:A', 20)  # 类型列宽
+            worksheet.set_column('B:B', 10)  # 数量列宽
+            worksheet.set_column('C:C', 15)  # 金额列宽
+            
             # 保存工作簿
             workbook.close()
             
@@ -2240,6 +2329,112 @@ class BillingManager:
                                         # 设置合并后单元格的值
                                         worksheet.cell(row=row, column=col).value = row_name
                     
+                    # 添加统计表格
+                    stats_start_row = worksheet.max_row + 2  # 留一行空白
+                    
+                    # 计算NAT和非NAT的VPS数量和金额
+                    nat_vps_rows = [row for row in bill_data.get('账单行', []) if row.get('是否使用NAT') == '是']
+                    non_nat_vps_rows = [row for row in bill_data.get('账单行', []) if row.get('是否使用NAT') != '是']
+                    
+                    nat_vps_count = len(nat_vps_rows)
+                    nat_vps_cost = sum(row.get('总金额', 0) for row in nat_vps_rows)
+                    
+                    non_nat_vps_count = len(non_nat_vps_rows)
+                    non_nat_vps_cost = sum(row.get('总金额', 0) for row in non_nat_vps_rows)
+                    
+                    nat_fee = bill_data.get('NAT费用', 0)
+                    total_amount = bill_data.get('月总费用', 0)
+                    
+                    # 创建统计表
+                    # 设置表格标题
+                    title_cell = worksheet.cell(row=stats_start_row, column=1)
+                    title_cell.value = '账单统计信息'
+                    title_cell.font = Font(name='微软雅黑', size=11, bold=True)
+                    title_cell.alignment = Alignment(horizontal='center', vertical='center')
+                    title_cell.fill = PatternFill(start_color='B7DEE8', end_color='B7DEE8', fill_type='solid')
+                    title_cell.border = Border(
+                        left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin')
+                    )
+                    
+                    # 合并标题单元格
+                    worksheet.merge_cells(f'A{stats_start_row}:C{stats_start_row}')
+                    
+                    # 设置表头
+                    headers = ['类型', '数量', '金额（$）']
+                    for col_idx, header in enumerate(headers):
+                        cell = worksheet.cell(row=stats_start_row + 1, column=col_idx + 1)
+                        cell.value = header
+                        cell.font = Font(name='微软雅黑', size=10, bold=True)
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+                        cell.border = Border(
+                            left=Side(style='thin'), right=Side(style='thin'),
+                            top=Side(style='thin'), bottom=Side(style='thin')
+                        )
+                    
+                    # 写入NAT VPS数据
+                    nat_row = stats_start_row + 2
+                    for col_idx, value in enumerate(['使用NAT的VPS', nat_vps_count, nat_vps_cost]):
+                        cell = worksheet.cell(row=nat_row, column=col_idx + 1)
+                        cell.value = value
+                        cell.font = Font(name='微软雅黑', size=10, color='800080')  # 紫色
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = Border(
+                            left=Side(style='thin'), right=Side(style='thin'),
+                            top=Side(style='thin'), bottom=Side(style='thin')
+                        )
+                        if col_idx == 2:  # 金额列使用货币格式
+                            cell.number_format = '$#,##0.00'
+                    
+                    # 写入非NAT VPS数据
+                    non_nat_row = stats_start_row + 3
+                    for col_idx, value in enumerate(['未使用NAT的VPS', non_nat_vps_count, non_nat_vps_cost]):
+                        cell = worksheet.cell(row=non_nat_row, column=col_idx + 1)
+                        cell.value = value
+                        cell.font = Font(name='微软雅黑', size=10, color='0000FF')  # 蓝色
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = Border(
+                            left=Side(style='thin'), right=Side(style='thin'),
+                            top=Side(style='thin'), bottom=Side(style='thin')
+                        )
+                        if col_idx == 2:  # 金额列使用货币格式
+                            cell.number_format = '$#,##0.00'
+                    
+                    # 写入NAT费用行
+                    nat_fee_row = stats_start_row + 4
+                    for col_idx, value in enumerate(['NAT费用', '-', nat_fee]):
+                        cell = worksheet.cell(row=nat_fee_row, column=col_idx + 1)
+                        cell.value = value
+                        cell.font = Font(name='微软雅黑', size=10, bold=True)
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = Border(
+                            left=Side(style='thin'), right=Side(style='thin'),
+                            top=Side(style='thin'), bottom=Side(style='thin')
+                        )
+                        if col_idx == 2:  # 金额列使用货币格式
+                            cell.number_format = '$#,##0.00'
+                    
+                    # 写入总计行
+                    total_row = stats_start_row + 5
+                    for col_idx, value in enumerate(['总计', nat_vps_count + non_nat_vps_count, total_amount]):
+                        cell = worksheet.cell(row=total_row, column=col_idx + 1)
+                        cell.value = value
+                        cell.font = Font(name='微软雅黑', size=10, bold=True)
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+                        cell.border = Border(
+                            left=Side(style='thin'), right=Side(style='thin'),
+                            top=Side(style='thin'), bottom=Side(style='thin')
+                        )
+                        if col_idx == 2:  # 金额列使用货币格式
+                            cell.number_format = '$#,##0.00'
+                    
+                    # 设置列宽
+                    worksheet.column_dimensions['A'].width = 20  # 类型列宽
+                    worksheet.column_dimensions['B'].width = 10  # 数量列宽
+                    worksheet.column_dimensions['C'].width = 15  # 金额列宽
+                
                 logger.info(f"成功导出{specific_year}年{specific_month}月账单到 {output_file}")
                 return True
             
