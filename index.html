@@ -1076,6 +1076,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-direction: row;
     }
     
     .server-selector select, .instance-selector select {
@@ -1083,6 +1084,7 @@
       border-radius: 4px;
       border: 1px solid #ccc;
       min-width: 250px;
+      margin-right: 10px;
     }
     
     .instance-details {
@@ -1784,6 +1786,28 @@
     .ip-location i {
       color: #e74c3c;
     }
+    
+    /* 添加横向排列按钮容器的样式 */
+    .horizontal-buttons {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: center;
+      margin-left: 5px;
+    }
+    
+    /* 确保按钮样式统一 */
+    .horizontal-buttons button {
+      height: 38px;
+      padding: 6px 12px;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #4CAF50;
+      color: white;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -1908,15 +1932,12 @@
                 {{ server.name }} ({{ server.host }})
               </option>
             </select>
-            <button class="btn btn-success" @click="loadWireguardInstances" :disabled="isRefreshingWireguard">
-              <i class="bi bi-arrow-clockwise" :class="{ 'spinner': isRefreshingWireguard }"></i>
-              {{ isRefreshingWireguard ? '刷新中...' : '刷新' }}
-            </button>
-            <button class="btn btn-primary ms-2" @click="forceSyncWireguardConfig" :disabled="isRefreshingWireguard">
-              <i class="bi bi-lightning-charge" :class="{ 'spinner': isRefreshingWireguard }"></i>
-              强制同步配置
-            </button>
-            <button @click="deployWireguard(wireguardSelectedServer)" :disabled="!wireguardSelectedServer" class="primary-button">部署新Wireguard</button>
+            <div class="horizontal-buttons">
+              <button class="btn btn-success" @click="loadWireguardInstances" :disabled="isRefreshingWireguard">
+                <i class="bi bi-arrow-clockwise" :class="{ 'spinner': isRefreshingWireguard }"></i>
+                {{ isRefreshingWireguard ? '刷新中...' : '刷新' }}
+              </button>
+            </div>
           </div>
           
           <div v-if="wireguardLoading" class="loading-spinner">
@@ -1925,8 +1946,7 @@
           </div>
           
           <div v-else-if="wireguardInstances.length === 0 && wireguardSelectedServer" class="no-instances">
-            <p>未找到Wireguard实例，请先部署Wireguard</p>
-            <button @click="deployWireguard(wireguardSelectedServer)" class="primary-button">部署Wireguard</button>
+            <p>未找到Wireguard实例</p>
           </div>
           
           <div v-else-if="wireguardInstances.length > 0" class="instances-list">
@@ -1938,7 +1958,9 @@
                   {{ instance }}
                 </option>
               </select>
-              <button @click="loadInstanceDetails" :disabled="!wireguardSelectedInstance">刷新</button>
+              <div class="horizontal-buttons">
+                <button @click="loadInstanceDetails" :disabled="!wireguardSelectedInstance">刷新</button>
+              </div>
             </div>
             
             <div v-if="wireguardInstanceDetails" class="instance-details">
@@ -1971,7 +1993,9 @@
                   <p v-if="wireguardInstanceDetails.portMappingRange.note" class="note">{{ wireguardInstanceDetails.portMappingRange.note }}</p>
                 </div>
                 <p v-if="wireguardSelectedInstance" class="port-range-info">当前显示的是 <strong>{{ wireguardSelectedInstance }}</strong> 的端口映射范围</p>
-                <button @click="loadInstanceDetails" class="refresh-button">刷新数据</button>
+                <div class="horizontal-buttons">
+                  <button @click="loadInstanceDetails" class="refresh-button">刷新数据</button>
+                </div>
               </div>
               
               <div class="peers-management">
