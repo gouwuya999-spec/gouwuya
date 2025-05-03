@@ -2253,7 +2253,21 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
         if (code === 0 && result) {
           try {
             const data = JSON.parse(result);
-            resolve({ success: true, data });
+            // 确保更新VPS价格，这样在月账单统计中显示正确的数据
+            const updateProcess = spawn('python', [
+              'billing_manager.py',
+              '--action=update_prices'
+            ]);
+            
+            updateProcess.on('close', (updateCode) => {
+              if (updateCode === 0) {
+                console.log('VPS价格更新成功');
+              } else {
+                console.warn('VPS价格更新警告:', updateCode);
+              }
+              // 无论价格更新是否成功，都返回保存结果
+              resolve({ success: true, data });
+            });
           } catch (parseError) {
             console.error('解析保存VPS结果失败:', parseError);
             resolve({ success: false, error: '解析保存VPS结果失败', result });

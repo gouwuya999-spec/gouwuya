@@ -1814,9 +1814,9 @@
   <div id="app" class="container">
     <div v-if="!loading">
       <div class="tabs">
-        <div class="tab" :class="{ active: activeTab === 'servers' }" @click="activeTab = 'servers'">服务器管理</div>
-        <div class="tab" :class="{ active: activeTab === 'wireguard' }" @click="activeTab = 'wireguard'">Wireguard</div>
-        <div class="tab" :class="{ active: activeTab === 'monthly-bill' }" @click="activeTab = 'monthly-bill'">月账单统计</div>
+        <div class="tab" :class="{ active: activeTab === 'servers' }" @click="setActiveTab('servers')">服务器管理</div>
+        <div class="tab" :class="{ active: activeTab === 'wireguard' }" @click="setActiveTab('wireguard')">Wireguard</div>
+        <div class="tab" :class="{ active: activeTab === 'monthly-bill' }" @click="setActiveTab('monthly-bill')">月账单统计</div>
       </div>
       
       <div class="header">

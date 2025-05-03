@@ -116,8 +116,9 @@ createApp({
     this.initAvailableYears();
     
     // 如果在月账单标签页，加载月账单汇总
-    if (this.activeTab === 'monthly-billing') {
+    if (this.activeTab === 'monthly-bill') {
       this.loadMonthlyBillSummary();
+      this.generateMonthlyBill();
     }
     
     // 加载VPS数据列表
@@ -710,13 +711,20 @@ createApp({
     setActiveTab(tab) {
       this.activeTab = tab;
       
-      // 切换到月账单标签页时初始化年份选项并加载账单汇总
-      if (tab === 'monthly-billing') {
-        this.initAvailableYears();
+      // 根据切换的标签页执行相应的操作
+      if (tab === 'monthly-bill') {
+        // 月账单标签页
         this.loadMonthlyBillSummary();
-        
-        // 清空之前的月账单详情数据
-        this.monthlyBill = {};
+        // 确保加载所有VPS数据
+        this.loadVpsDataList();
+        // 生成当前选择年月的账单
+        this.generateMonthlyBill();
+      } else if (tab === 'wireguard') {
+        // 切换到Wireguard选项卡时，重置选中状态
+        this.wireguardSelectedServer = '';
+        this.wireguardSelectedInstance = '';
+        this.wireguardInstances = [];
+        this.wireguardInstanceDetails = null;
       }
     },
     
@@ -953,6 +961,11 @@ createApp({
           // 更新价格和使用时长
           this.updateVpsPrices();
           console.log('已加载VPS数据列表:', this.vpsDataList);
+          
+          // 添加以下代码：在加载VPS数据后自动更新月账单统计
+          if (this.activeTab === 'monthly-bill') {
+            this.generateMonthlyBill();
+          }
         } else {
           console.error('加载VPS数据列表失败:', result.error);
         }
@@ -1111,6 +1124,11 @@ createApp({
           
           // 重新生成当前月账单
           this.generateMonthlyBill();
+          
+          // 如果当前在月账单统计页面，同时更新月账单汇总
+          if (this.activeTab === 'monthly-bill') {
+            this.loadMonthlyBillSummary();
+          }
         } else {
           console.error('保存VPS失败:', result.error);
           alert('保存VPS失败: ' + result.error);
@@ -1140,6 +1158,11 @@ createApp({
             
             // 重新生成当前月账单
             this.generateMonthlyBill();
+            
+            // 如果当前在月账单统计页面，同时更新月账单汇总
+            if (this.activeTab === 'monthly-bill') {
+              this.loadMonthlyBillSummary();
+            }
           } else {
             console.error('删除VPS失败:', result.error);
             alert('删除VPS失败: ' + result.error);
@@ -1164,6 +1187,49 @@ createApp({
       }, 0);
       
       return total.toFixed(2);
+    },
+    
+    // 格式化日期显示
+    formatDateForDisplay(dateStr) {
+      if (!dateStr) return '-';
+      // 将YYYY/MM/DD转换为更友好的显示格式
+      return dateStr.replace(/(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3');
+    },
+    
+    // 计算VPS使用时长（如果服务器没有提供）
+    calculateUsagePeriod(vps) {
+      if (!vps || !vps.purchase_date) return '-';
+      
+      try {
+        // 购买日期
+        const purchaseDate = new Date(vps.purchase_date.replace(/\//g, '-'));
+        
+        // 结束日期（如果已销毁则使用销毁日期，否则使用当前日期）
+        let endDate;
+        if (vps.status === '销毁' && vps.cancel_date) {
+          endDate = new Date(vps.cancel_date.replace(/\//g, '-'));
+        } else {
+          endDate = new Date();
+        }
+        
+        // 计算时间差
+        const diffTime = Math.abs(endDate - purchaseDate);
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        // 根据天数计算月和日
+        const months = Math.floor(diffDays / 30);
+        const days = diffDays % 30;
+        
+        // 格式化输出
+        if (months > 0) {
+          return `${months}个月${days}天`;
+        } else {
+          return `${days}天`;
+        }
+      } catch (error) {
+        console.error('计算使用时长失败:', error);
+        return '-';
+      }
     },
     
     // 验证日期格式是否为YYYY-MM-DD或YYYY/MM/DD

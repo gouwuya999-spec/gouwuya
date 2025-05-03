@@ -1,3 +1,14 @@
 nat_fee: 0
-total_bill: 0
-vps_servers: []
+total_bill: 1.57
+vps_servers:
+- cancel_date: 2025/05/02
+  country: 美国 洛杉矶 加州
+  ip_address: 93.179.114.6
+  name: VPS-1
+  price_per_month: 20
+  purchase_date: 2025/03/16
+  start_date: 2025/03/16
+  status: 销毁
+  total_price: 1.29
+  usage_period: 1天23小时59分钟
+  use_nat: true
