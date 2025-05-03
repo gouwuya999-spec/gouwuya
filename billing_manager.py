@@ -16,6 +16,7 @@ import locale
 import requests
 import time
 import xlsxwriter
+import threading
 
 # 设置stdout为UTF-8编码
 if sys.stdout.encoding != 'utf-8':
@@ -57,12 +58,16 @@ class BillingManager:
         self.billing_year = datetime.datetime.now().year
         self.billing_month = datetime.datetime.now().month
         self.exchange_rate_cache = None  # 用于缓存汇率
+        self.auto_save_timer = None  # 用于自动保存的定时器
         
         # 确保字体目录存在
         self.ensure_fonts_directory()
         
         self.load_data()
         
+        # 启动自动保存定时器，每5分钟自动保存一次
+        self.start_auto_save_timer()
+    
     def ensure_fonts_directory(self):
         """确保fonts目录存在"""
         try:
@@ -170,6 +175,7 @@ class BillingManager:
                 for key, value in kwargs.items():
                     vps[key] = value
                 
+                # 更新后立即保存
                 return self.save_data()
             except Exception as e:
                 logger.error(f"更新VPS数据时出错: {str(e)}")
@@ -215,6 +221,8 @@ class BillingManager:
             
             # 添加VPS数据的深拷贝，避免引用问题
             self.vps_data.append(dict(vps_data))
+            
+            # 添加后立即保存
             return self.save_data()
         except Exception as e:
             logger.error(f"添加VPS时出错: {str(e)}")
@@ -2896,6 +2904,33 @@ class BillingManager:
                 "failed": len(vps_list),
                 "errors": [str(e)]
             }
+
+    def start_auto_save_timer(self):
+        """启动自动保存定时器，定期保存VPS数据"""
+        try:
+            # 停止已有的定时器（如果存在）
+            if self.auto_save_timer:
+                self.auto_save_timer.cancel()
+            
+            # 创建新的定时器，每5分钟自动保存一次
+            def auto_save_task():
+                try:
+                    logger.info("执行自动保存VPS数据...")
+                    self.save_data()
+                    # 重新设置下一次自动保存的定时器
+                    self.auto_save_timer = threading.Timer(300, auto_save_task)
+                    self.auto_save_timer.daemon = True  # 设置为守护线程，程序退出时不会阻塞
+                    self.auto_save_timer.start()
+                except Exception as e:
+                    logger.error(f"自动保存VPS数据失败: {str(e)}")
+            
+            # 启动第一次定时器
+            self.auto_save_timer = threading.Timer(300, auto_save_task)
+            self.auto_save_timer.daemon = True
+            self.auto_save_timer.start()
+            logger.info("自动保存定时器已启动，每5分钟保存一次VPS数据")
+        except Exception as e:
+            logger.error(f"启动自动保存定时器失败: {str(e)}")
 
 # 如果作为命令行脚本运行
 if __name__ == "__main__":
