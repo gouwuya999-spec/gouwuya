@@ -2224,8 +2224,23 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
   try {
     console.log('保存VPS数据:', vpsData);
     
+    // 创建一个深拷贝，并确保所有数据可以被序列化
+    const cleanVpsData = JSON.parse(JSON.stringify({
+      ...vpsData,
+      // 确保所有必要的字段都存在并且是正确的类型
+      name: vpsData.name || '',
+      ip_address: vpsData.ip_address || '',
+      country: vpsData.country || '',
+      status: vpsData.status || '在用',
+      price_per_month: parseFloat(vpsData.price_per_month) || 0,
+      start_date: vpsData.start_date || '',
+      purchase_date: vpsData.purchase_date || '',
+      cancel_date: vpsData.status === '销毁' ? (vpsData.cancel_date || '') : '',
+      use_nat: !!vpsData.use_nat, // 确保是布尔值
+    }));
+    
     // 将VPS数据转换为JSON字符串
-    const vpsDataJson = JSON.stringify(vpsData);
+    const vpsDataJson = JSON.stringify(cleanVpsData);
     
     // 调用Python脚本保存VPS
     const pythonProcess = spawn('python', [
@@ -2280,7 +2295,7 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
     });
   } catch (error) {
     console.error('保存VPS出错:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message || '保存VPS失败，请检查输入数据是否有效' };
   }
 });
 

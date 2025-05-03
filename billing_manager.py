@@ -159,9 +159,21 @@ class BillingManager:
         """
         vps = self.get_vps_by_name(vps_name)
         if vps:
-            for key, value in kwargs.items():
-                vps[key] = value
-            return self.save_data()
+            try:
+                # 确保数据类型正确
+                if 'price_per_month' in kwargs:
+                    kwargs['price_per_month'] = float(kwargs['price_per_month'])
+                if 'use_nat' in kwargs:
+                    kwargs['use_nat'] = bool(kwargs['use_nat'])
+                
+                # 更新字段
+                for key, value in kwargs.items():
+                    vps[key] = value
+                
+                return self.save_data()
+            except Exception as e:
+                logger.error(f"更新VPS数据时出错: {str(e)}")
+                return False
         else:
             logger.error(f"找不到VPS: {vps_name}")
             return False
@@ -176,26 +188,37 @@ class BillingManager:
         Returns:
             bool: 是否成功
         """
-        vps_name = vps_data.get('name')
-        if not vps_name:
-            logger.error("VPS数据缺少name字段")
+        try:
+            vps_name = vps_data.get('name')
+            if not vps_name:
+                logger.error("VPS数据缺少name字段")
+                return False
+                
+            # 检查是否已存在
+            if self.get_vps_by_name(vps_name):
+                logger.error(f"VPS已存在: {vps_name}")
+                return False
+                
+            # 添加start_date字段，记录创建时间
+            if 'start_date' not in vps_data:
+                vps_data['start_date'] = datetime.datetime.now().strftime("%Y/%m/%d")
+                
+            # 添加purchase_date字段，记录购买时间
+            if 'purchase_date' not in vps_data:
+                vps_data['purchase_date'] = datetime.datetime.now().strftime("%Y/%m/%d")
+                
+            # 确保数据类型正确
+            if 'price_per_month' in vps_data:
+                vps_data['price_per_month'] = float(vps_data['price_per_month'])
+            if 'use_nat' in vps_data:
+                vps_data['use_nat'] = bool(vps_data['use_nat'])
+            
+            # 添加VPS数据的深拷贝，避免引用问题
+            self.vps_data.append(dict(vps_data))
+            return self.save_data()
+        except Exception as e:
+            logger.error(f"添加VPS时出错: {str(e)}")
             return False
-            
-        # 检查是否已存在
-        if self.get_vps_by_name(vps_name):
-            logger.error(f"VPS已存在: {vps_name}")
-            return False
-            
-        # 添加start_date字段，记录创建时间
-        if 'start_date' not in vps_data:
-            vps_data['start_date'] = datetime.datetime.now().strftime("%Y/%m/%d")
-            
-        # 添加purchase_date字段，记录购买时间
-        if 'purchase_date' not in vps_data:
-            vps_data['purchase_date'] = datetime.datetime.now().strftime("%Y/%m/%d")
-            
-        self.vps_data.append(vps_data)
-        return self.save_data()
     
     def delete_vps(self, vps_name):
         """
@@ -2972,32 +2995,61 @@ if __name__ == "__main__":
                 raise ValueError("保存VPS需要提供vps_data参数")
             
             # 解析VPS数据JSON字符串
-            vps_data = json.loads(args.vps_data)
-            
-            # 保存VPS数据
-            if 'name' in vps_data:
-                vps_name = vps_data['name']
-                existing_vps = billing_manager.get_vps_by_name(vps_name)
+            try:
+                vps_data = json.loads(args.vps_data)
                 
-                if existing_vps:
-                    # 更新已有VPS
-                    success = billing_manager.update_vps(vps_name, **vps_data)
-                    result = billing_manager.get_vps_by_name(vps_name)
-                else:
-                    # 添加新VPS
-                    success = billing_manager.add_vps(vps_data)
-                    result = billing_manager.get_vps_by_name(vps_name)
+                # 确保所有的字段类型正确
+                if 'price_per_month' in vps_data:
+                    vps_data['price_per_month'] = float(vps_data['price_per_month'])
+                if 'use_nat' in vps_data:
+                    vps_data['use_nat'] = bool(vps_data['use_nat'])
                 
-                if success and result:
-                    # 更新价格
-                    billing_manager.update_prices()
-                    # 输出更新后的VPS数据
-                    print(json.dumps(result, ensure_ascii=False))
+                # 确保状态字段是字符串
+                if 'status' in vps_data:
+                    vps_data['status'] = str(vps_data['status'])
+                    
+                # 确保日期格式正确
+                for date_field in ['purchase_date', 'start_date', 'cancel_date']:
+                    if date_field in vps_data and vps_data[date_field]:
+                        # 确保日期格式为 YYYY/MM/DD
+                        date_value = str(vps_data[date_field])
+                        if '/' not in date_value and '-' in date_value:
+                            vps_data[date_field] = date_value.replace('-', '/')
+                
+                # 如果状态不是销毁，确保不包含cancel_date或置为空
+                if vps_data.get('status') != '销毁' and 'cancel_date' in vps_data:
+                    vps_data['cancel_date'] = ''
+                
+                # 保存VPS数据
+                if 'name' in vps_data:
+                    vps_name = vps_data['name']
+                    existing_vps = billing_manager.get_vps_by_name(vps_name)
+                    
+                    if existing_vps:
+                        # 更新已有VPS
+                        success = billing_manager.update_vps(vps_name, **vps_data)
+                        result = billing_manager.get_vps_by_name(vps_name)
+                    else:
+                        # 添加新VPS
+                        success = billing_manager.add_vps(vps_data)
+                        result = billing_manager.get_vps_by_name(vps_name)
+                    
+                    if success and result:
+                        # 更新价格
+                        billing_manager.update_prices()
+                        # 输出更新后的VPS数据
+                        print(json.dumps(result, ensure_ascii=False))
+                    else:
+                        print(f"保存VPS失败: {vps_name}", file=sys.stderr)
+                        sys.exit(1)
                 else:
-                    print(f"保存VPS失败: {vps_name}", file=sys.stderr)
+                    print("VPS数据缺少name字段", file=sys.stderr)
                     sys.exit(1)
-            else:
-                print("VPS数据缺少name字段", file=sys.stderr)
+            except json.JSONDecodeError as e:
+                print(f"VPS数据JSON解析失败: {str(e)}", file=sys.stderr)
+                sys.exit(1)
+            except Exception as e:
+                print(f"处理VPS数据时出错: {str(e)}", file=sys.stderr)
                 sys.exit(1)
                 
         elif args.action == 'delete_vps':

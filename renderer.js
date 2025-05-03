@@ -1104,8 +1104,25 @@ createApp({
           this.editingVps.start_date = this.formatDateToSystem(this.editingVps.start_date);
         }
         
+        // 创建一个干净的数据对象，确保所有字段类型正确
+        const cleanedVpsData = {
+          name: String(this.editingVps.name),
+          ip_address: String(this.editingVps.ip_address || ''),
+          country: String(this.editingVps.country || ''),
+          status: String(this.editingVps.status || '在用'),
+          price_per_month: parseFloat(this.editingVps.price_per_month) || 0,
+          purchase_date: String(this.editingVps.purchase_date || ''),
+          start_date: String(this.editingVps.start_date || ''),
+          use_nat: Boolean(this.editingVps.use_nat)
+        };
+        
+        // 只在销毁状态时添加销毁时间
+        if (cleanedVpsData.status === '销毁' && this.editingVps.cancel_date) {
+          cleanedVpsData.cancel_date = String(this.editingVps.cancel_date);
+        }
+        
         // 保存VPS数据
-        const result = await window.electronAPI.saveVps(this.editingVps);
+        const result = await window.electronAPI.saveVps(cleanedVpsData);
         
         if (result.success) {
           console.log('保存VPS成功:', result.data);
