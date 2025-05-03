@@ -12,3 +12,14 @@ vps_servers:
   total_price: 1.29
   usage_period: 1天23小时59分钟
   use_nat: true
+- cancel_date: 2025/04/29
+  country: 英国 利兹 英格兰
+  ip_address: 95.147.15.6
+  name: VPS-2
+  price_per_month: 20
+  purchase_date: 2025/03/17
+  start_date: 2025/03/17
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: true
