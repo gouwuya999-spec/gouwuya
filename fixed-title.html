@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>VPS管理系统</title>
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com;">
+  <!-- 引入Font Awesome图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    /* 全局样式 */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f6f9;
+      overflow-x: hidden;
+    }
+
+    /* 固定标题样式 */
+    #fixed-motto {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      font-weight: bold;
+      z-index: 9999;
+      white-space: nowrap;
+      pointer-events: none;
+      text-align: center;
+      width: auto;
+    }
+    
+    #fixed-motto .motto-container {
+      display: inline-block;
+      padding: 5px 15px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+    
+    #fixed-motto .motto-text {
+      background: linear-gradient(90deg, 
+        #ff9800, #f44336, #e91e63, #9c27b0, #673ab7, 
+        #3f51b5, #2196f3, #03a9f4, #00bcd4, #009688, 
+        #4CAF50, #8BC34A, #CDDC39, #FFEB3B, #FFC107);
+      background-size: 400% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: motto-animation 6s linear infinite;
+    }
+    
+    #fixed-motto i {
+      color: #ff9800;
+      margin-right: 8px;
+      animation: rocket-pulse 2s ease infinite;
+      text-shadow: 0 0 10px rgba(255, 152, 0, 0.5);
+    }
+    
+    @keyframes motto-animation {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    
+    @keyframes rocket-pulse {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-3px) scale(1.2); }
+    }
+    
+    /* 调整header容器 */
+    .header {
+      position: relative;
+      min-height: 60px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    /* 应用容器 */
+    #app {
+      margin: 0;
+      padding: 0;
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <!-- 固定的标题元素，位于所有内容之上 -->
+  <div id="fixed-motto">
+    <div class="motto-container">
+      <span class="motto-text"><i class="fas fa-rocket"></i>和事业谈一场轰轰烈烈的恋爱吧！事业不会让你输！</span>
+    </div>
+  </div>
+
+  <!-- 这里是原Vue应用 -->
+  <div id="app">
+    <!-- 应用内容 -->
+  </div>
+  
+  <script>
+    // 为固定标题添加额外的动画效果
+    document.addEventListener('DOMContentLoaded', function() {
+      const fixedMotto = document.getElementById('fixed-motto');
+      if (fixedMotto) {
+        // 添加鼠标悬停效果
+        fixedMotto.addEventListener('mouseenter', function() {
+          const text = fixedMotto.querySelector('.motto-text');
+          if (text) {
+            text.style.animationDuration = '2s';
+          }
+        });
+        
+        fixedMotto.addEventListener('mouseleave', function() {
+          const text = fixedMotto.querySelector('.motto-text');
+          if (text) {
+            text.style.animationDuration = '6s';
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html> 
