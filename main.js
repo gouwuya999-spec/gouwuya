@@ -59,6 +59,9 @@ function createWindow() {
     show: false
   });
 
+  // 移除菜单栏
+  mainWindow.setMenu(null);
+
   // 等待加载完成后显示窗口
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
