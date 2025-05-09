@@ -1,5 +1,5 @@
 nat_fee: 0
-total_bill: 51.86
+total_bill: 53.38
 vps_servers:
 - cancel_date: 2025/04/20
   country: 德国 法兰克福 黑森州
@@ -30,8 +30,8 @@ vps_servers:
   purchase_date: 2024/12/16
   start_date: 2024/12/16
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - cancel_date: 2025/03/28
   country: 德国 法兰克福 黑森州
@@ -73,8 +73,8 @@ vps_servers:
   purchase_date: 2024/12/16
   start_date: 2024/12/16
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - cancel_date: 2025/03/28
   country: 德国 法兰克福 黑森州
@@ -226,8 +226,8 @@ vps_servers:
   purchase_date: 2025/02/14
   start_date: 2025/02/14
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - country: 德国 法兰克福 黑森州
   ip_address: 199.247.7.210
@@ -236,8 +236,8 @@ vps_servers:
   purchase_date: 2025/02/14
   start_date: 2025/02/14
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - cancel_date: 2025/03/28
   country: 德国 法兰克福 黑森州
@@ -422,8 +422,8 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - country: 印度 班加羅爾 卡纳塔克邦
   ip_address: 139.84.136.95
@@ -432,8 +432,8 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - country: 荷兰 阿姆斯特丹 北荷兰省
   ip_address: 45.76.34.98
@@ -442,8 +442,8 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false
 - cancel_date: 2025/04/24
   country: 印度 班加羅爾 卡纳塔克邦
@@ -463,6 +463,6 @@ vps_servers:
   purchase_date: 2025/04/29
   start_date: 2025/04/29
   status: 在用
-  total_price: 5.7
-  usage_period: 8天20小时10分钟
+  total_price: 5.89
+  usage_period: 9天3小时4分钟
   use_nat: false

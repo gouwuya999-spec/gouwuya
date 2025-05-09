@@ -597,11 +597,25 @@ createApp({
       this.clientConfigs = [];  // 重置客户端配置列表
       
       try {
-        // 使用执行Wireguard脚本函数获取所有客户端配置
+        // 检查是否已存在SSH连接
+        const connectResult = await window.electronAPI.testSSHConnection(this.currentConnectedServer.id);
+        if (!connectResult.success) {
+          // 尝试连接服务器
+          await window.electronAPI.openSSHTerminal(this.currentConnectedServer.id);
+          this.sshOutput += `> 已连接到服务器: ${this.currentConnectedServer.name || this.currentConnectedServer.host}\n`;
+        }
+        
+        // 使用增强版的执行Wireguard脚本函数获取所有客户端配置
+        this.sshOutput += `> 正在全面搜索服务器上的Wireguard配置...\n`;
         const wireguardResult = await window.electronAPI.executeWireguardScript(this.currentConnectedServer.id);
         
         if (wireguardResult.success && wireguardResult.clientConfigs && wireguardResult.clientConfigs.length > 0) {
           this.sshOutput += `找到 ${wireguardResult.clientConfigs.length} 个客户端配置文件:\n`;
+          
+          // 打印配置文件路径
+          for (const config of wireguardResult.clientConfigs) {
+            this.sshOutput += `- ${config.path}\n`;
+          }
           
           // 保存所有配置文件
           this.clientConfigs = wireguardResult.clientConfigs;
@@ -610,35 +624,48 @@ createApp({
           // 显示第一个配置文件
           await this.showConfigFile(0);
           return;
+        } else if (wireguardResult.warning) {
+          this.sshOutput += `警告: ${wireguardResult.warning}\n`;
         }
         
-        // 如果上面的方法找不到配置，继续使用原来的方法查找
-        // 首先尝试直接查找客户端配置文件（明确包含client关键字的）
-        const clientSearchCommand = {
+        // 如果上述方法没有找到配置，尝试更广泛的搜索
+        this.sshOutput += `> 未找到标准配置，尝试全磁盘搜索...\n`;
+        
+        // 全磁盘搜索客户端配置文件（注意: 这可能会很慢，所以设置超时）
+        const fullSearchCommand = {
           serverId: this.currentConnectedServer.id,
-          command: 'find /etc/wireguard -name "*client*.conf" -o -name "wg[0-9]*_client.conf" -o -name "peer*.conf" -o -name "wg[0-9]*-peer[0-9]*-client.conf" 2>/dev/null || echo "未找到客户端配置文件"'
+          command: 'timeout 30s find / -type f -name "*.conf" 2>/dev/null | grep -E "wg|wireguard|client|peer" || echo "搜索超时或未找到"'
         };
         
-        const clientResult = await window.electronAPI.executeSSHCommand(clientSearchCommand);
+        const fullSearchResult = await window.electronAPI.executeSSHCommand(fullSearchCommand);
         
-        if (clientResult.success && clientResult.stdout && !clientResult.stdout.includes("未找到客户端配置文件")) {
-          this.sshOutput += `找到以下客户端配置文件:\n${clientResult.stdout}\n`;
+        if (fullSearchResult.success && fullSearchResult.stdout && !fullSearchResult.stdout.includes("搜索超时") && !fullSearchResult.stdout.includes("未找到")) {
+          this.sshOutput += `全磁盘搜索找到以下可能的配置文件:\n${fullSearchResult.stdout}\n`;
           
-          // 获取找到的所有配置文件路径
-          const configFiles = clientResult.stdout.split('\n').filter(line => line.trim() !== '');
-          if (configFiles.length > 0) {
+          // 过滤掉系统配置文件，只保留可能的客户端配置
+          const possibleConfigFiles = fullSearchResult.stdout.split('\n')
+            .filter(line => line.trim() !== '' && 
+                   (line.includes('/wg') || line.includes('client') || line.includes('peer')) &&
+                   !line.includes('/etc/systemd/') && 
+                   !line.includes('/var/lib/') &&
+                   !line.includes('/usr/share/'));
+          
+          if (possibleConfigFiles.length > 0) {
             // 存储找到的配置文件
-            this.foundConfigFiles = configFiles;
+            this.foundConfigFiles = possibleConfigFiles;
             
             // 读取所有配置内容
-            for (const configPath of configFiles) {
+            for (const configPath of possibleConfigFiles) {
               const catCommand = {
                 serverId: this.currentConnectedServer.id,
-                command: `cat "${configPath}"`
+                command: `cat "${configPath}" 2>/dev/null`
               };
               
               const contentResult = await window.electronAPI.executeSSHCommand(catCommand);
-              if (contentResult.success && contentResult.stdout) {
+              if (contentResult.success && contentResult.stdout && 
+                  contentResult.stdout.includes("[Interface]") && 
+                  contentResult.stdout.includes("PrivateKey") &&
+                  contentResult.stdout.includes("[Peer]")) {
                 this.clientConfigs.push({
                   path: configPath,
                   name: configPath.split('/').pop(),
@@ -647,18 +674,44 @@ createApp({
               }
             }
             
-            // 显示第一个配置文件
-            await this.showConfigFile(0);
-            return;
+            if (this.clientConfigs.length > 0) {
+              this.sshOutput += `找到 ${this.clientConfigs.length} 个有效的Wireguard客户端配置文件\n`;
+              // 显示第一个配置文件
+              await this.showConfigFile(0);
+              return;
+            }
           }
         }
         
-        // 以下是原来的代码，继续执行其他查找逻辑...
+        // 如果还是没有找到，尝试手动生成一个应急配置
+        this.sshOutput += `> 未找到现有配置，检查Wireguard状态并尝试手动创建...\n`;
         
-        // ... existing code ...
+        // 检查Wireguard是否正在运行
+        const wgShowCommand = {
+          serverId: this.currentConnectedServer.id,
+          command: 'wg show 2>/dev/null || echo "Wireguard未运行"'
+        };
+        
+        const wgShowResult = await window.electronAPI.executeSSHCommand(wgShowCommand);
+        
+        if (wgShowResult.success && !wgShowResult.stdout.includes("Wireguard未运行")) {
+          this.sshOutput += `检测到Wireguard正在运行，但未找到配置文件\n`;
+          this.sshOutput += `请尝试重新部署Wireguard或手动查看服务器上的配置\n`;
+        } else {
+          this.sshOutput += `未检测到运行中的Wireguard服务\n`;
+          this.sshOutput += `建议：点击"Wireguard部署"按钮进行自动部署\n`;
+        }
+        
+        // 提示用户Wireguard运行状态
+        this.sshOutput += `\n未找到有效的Wireguard客户端配置文件。\n`;
+        this.sshOutput += `如果您确定配置文件存在，请执行以下操作：\n`;
+        this.sshOutput += `1. 通过SSH终端手动查找 (find / -name "*client*.conf")\n`;
+        this.sshOutput += `2. 检查Wireguard状态 (systemctl status wg-quick@wg0)\n`;
+        this.sshOutput += `3. 重新部署Wireguard\n`;
       } catch (error) {
         console.error('查找Wireguard配置失败:', error);
         this.sshOutput += `错误: ${error.message || '未知错误'}\n`;
+        this.sshOutput += `建议重新连接服务器并尝试部署Wireguard\n`;
       }
     },
     

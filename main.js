@@ -1208,18 +1208,44 @@ ipcMain.handle('deploy-wireguard', async (event, serverId) => {
         message 
       });
     };
+
+    // 新增: 预检查和安装所有必需的软件包
+    sendProgress(2, '正在检查系统更新...');
+    await ssh.execCommand('apt update');
+    
+    // 预安装必要工具
+    sendProgress(3, '正在预安装必要工具包...');
+    const preInstallResult = await ssh.execCommand('apt install -y curl wget sudo software-properties-common apt-transport-https ca-certificates');
+    console.log('预安装工具结果:', preInstallResult);
+    
+    // 检查和安装wireguard-tools
+    sendProgress(4, '正在检查Wireguard工具...');
+    const checkWgResult = await ssh.execCommand('which wg || echo "not-installed"');
+    if (checkWgResult.stdout.includes('not-installed')) {
+      sendProgress(4.5, '正在安装Wireguard工具...');
+      const installWgResult = await ssh.execCommand('apt install -y wireguard wireguard-tools');
+      console.log('Wireguard工具安装结果:', installWgResult);
+    }
     
     // 自动执行Wireguard部署所需的步骤
     // 1. 设置DNS
     sendProgress(5, '正在设置DNS...');
     await ssh.execCommand('echo "nameserver 1.1.1.1" > /etc/resolv.conf');
     
-    // 2. 安装VIM编辑器
-    sendProgress(10, '正在安装VIM编辑器...');
-    const vimInstallResult = await ssh.execCommand('apt update && apt install -y vim');
-    console.log('VIM安装结果:', vimInstallResult);
+    // 2. 安装VIM编辑器和其他依赖
+    sendProgress(10, '正在安装VIM编辑器和依赖包...');
+    const vimInstallResult = await ssh.execCommand('apt install -y vim qrencode ufw iptables-persistent curl');
+    console.log('依赖包安装结果:', vimInstallResult);
 
-    // 3. Wireguard脚本内容 - 注意: 修复了转义字符导致的JavaScript解析错误
+    // 3. 确保系统文件系统权限正确
+    sendProgress(12, '正在配置系统...');
+    await ssh.execCommand('mkdir -p /root/VPS配置WG && chmod 700 /root/VPS配置WG');
+    
+    // 4. 检查iptables状态
+    sendProgress(14, '正在检查网络配置...');
+    await ssh.execCommand('sysctl -w net.ipv4.ip_forward=1');
+    
+    // 5. Wireguard脚本内容 - 注意: 修复了转义字符导致的JavaScript解析错误
     sendProgress(15, '正在准备安装脚本...');
     const wireguardScript = `#!/bin/bash
 # VPS配置WG.sh
@@ -1589,8 +1615,9 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
     
     // 获取客户端配置文件
     sendProgress(100, '获取客户端配置...');
+    // 首次尝试查找配置文件
     const findClientConfigsResult = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo "未找到客户端配置"');
-    const clientConfigs = [];
+    let clientConfigs = [];
 
     if (findClientConfigsResult.stdout && !findClientConfigsResult.stdout.includes("未找到客户端配置")) {
       const configFiles = findClientConfigsResult.stdout.split('\n').filter(line => line.trim() !== '');
@@ -1608,11 +1635,86 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
       }
     }
 
+    // 如果没有找到配置文件，尝试在其他位置查找
+    if (clientConfigs.length === 0) {
+      console.log('在默认位置未找到配置文件，尝试扩展搜索...');
+      // 更广泛的搜索
+      const extendedSearchResult = await ssh.execCommand('find /etc/wireguard /root -name "*client*.conf" -o -name "*peer*.conf" 2>/dev/null || echo "未找到"');
+      
+      if (extendedSearchResult.stdout && !extendedSearchResult.stdout.includes("未找到")) {
+        const extendedConfigFiles = extendedSearchResult.stdout.split('\n').filter(line => line.trim() !== '');
+        
+        for (const configPath of extendedConfigFiles) {
+          const configResult = await ssh.execCommand(`cat "${configPath}"`);
+          if (configResult.stdout) {
+            clientConfigs.push({
+              path: configPath,
+              name: configPath.split('/').pop(),
+              content: configResult.stdout
+            });
+          }
+        }
+      }
+    }
+    
+    // 如果仍然没有找到配置文件，但Wireguard已安装，尝试手动创建配置
+    if (clientConfigs.length === 0) {
+      console.log('未找到配置文件，检查Wireguard状态并尝试手动生成...');
+      // 检查Wireguard服务状态
+      const wgShowResult = await ssh.execCommand('wg show 2>/dev/null || echo "Wireguard未运行"');
+      
+      if (!wgShowResult.stdout.includes("Wireguard未运行")) {
+        console.log('Wireguard正在运行，但未找到配置文件，尝试手动获取接口信息...');
+        // 从wg show输出中提取信息并手动生成配置
+        const wgIfaceResult = await ssh.execCommand('ip -br a | grep wg || echo "no wireguard interface"');
+        
+        if (!wgIfaceResult.stdout.includes("no wireguard interface")) {
+          // 解析接口名称
+          const wgInterfaces = wgIfaceResult.stdout.split('\n')
+            .map(line => line.trim().split(/\s+/)[0])
+            .filter(iface => iface.startsWith('wg'));
+          
+          if (wgInterfaces.length > 0) {
+            // 使用第一个找到的接口获取详细信息
+            const instanceDetails = await getWireguardInstanceDetails(ssh, wgInterfaces[0]);
+            if (instanceDetails && instanceDetails.peers && instanceDetails.peers.length > 0) {
+              // 添加从接口获取的配置
+              instanceDetails.peers.forEach(peer => {
+                if (peer.config) {
+                  clientConfigs.push({
+                    path: peer.file || `/root/VPS配置WG/${wgInterfaces[0]}-peer${peer.number}-client.conf`,
+                    name: `${wgInterfaces[0]}-peer${peer.number}-client.conf`,
+                    content: peer.config
+                  });
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 如果确实没有找到配置文件但部署看起来成功了，通知用户
+    const hasMissingConfigWarning = clientConfigs.length === 0 ? 
+      "\n\n警告：未找到客户端配置文件。这可能是因为:\n" +
+      "1. 脚本仍在后台执行中\n" +
+      "2. 配置文件保存在非标准位置\n" +
+      "3. 部署过程中出现了问题\n\n" +
+      "建议：\n" +
+      "- 请稍后使用'查找配置'按钮重新尝试查找配置文件\n" +
+      "- 或通过SSH终端执行 'find / -name \"*client*.conf\" -o -name \"*peer*.conf\"' 手动查找" : "";
+
     return {
       success: true,
-      output: "Wireguard部署已完成！脚本已自动执行以下步骤：\n1.设置DNS\n2.安装VIM编辑器\n3.保存脚本到VPS动态配置wireguard.sh\n4.赋予执行权限\n5.运行脚本完成部署\n\n您现在可以进入SSH终端查看更多细节和配置信息。",
+      output: "Wireguard部署已完成！脚本已自动执行以下步骤：\n" +
+              "1. 安装Wireguard和依赖包\n" +
+              "2. 设置DNS和系统配置\n" +
+              "3. 创建Wireguard配置\n" +
+              "4. 启动Wireguard服务\n" +
+              "5. 生成客户端配置文件" + hasMissingConfigWarning,
       clientConfig: clientConfigs.length > 0 ? clientConfigs[0].content : '',
       clientConfigs: clientConfigs,
+      warning: clientConfigs.length === 0 ? "未找到客户端配置文件，可能仍在生成中" : undefined,
       debug: {
         notes: "Wireguard部署已自动完成",
         execScriptOutput: execScriptResult
@@ -1776,43 +1878,223 @@ ipcMain.handle('close-ssh-connection', async (event, serverId) => {
 // 执行Wireguard脚本
 ipcMain.handle('execute-wireguard-script', async (event, serverId) => {
   if (!activeSSHConnections.has(serverId)) {
-    return { success: false, error: '未连接到服务器' };
+    // 尝试连接服务器
+    const servers = store.get('servers') || [];
+    const server = servers.find(s => s.id === serverId);
+    
+    if (!server) {
+      return { success: false, error: '找不到服务器' };
+    }
+    
+    // 连接SSH
+    const connectionResult = await connectToSSH(server);
+    
+    if (!connectionResult.success) {
+      return connectionResult;
+    }
+    
+    // 存储连接信息
+    activeSSHConnections.set(serverId, { ssh: connectionResult.ssh, server });
   }
   
   const { ssh } = activeSSHConnections.get(serverId);
   
   try {
-    // 获取客户端配置文件信息 - 修改为查找所有客户端配置
-    const configCheckCmd = 'find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo "未找到客户端配置文件"';
+    console.log('开始执行Wireguard检查和配置检索...');
+    
+    // 检查Wireguard是否已安装
+    const wgCheckResult = await ssh.execCommand('command -v wg || echo "未安装"');
+    if (wgCheckResult.stdout.includes("未安装")) {
+      console.log('Wireguard工具未安装，需要先部署');
+      return {
+        success: true,
+        output: "未检测到Wireguard工具。请先点击'Wireguard部署'按钮进行自动部署。",
+        clientConfigs: []
+      };
+    }
+    
+    // 检查Wireguard配置目录是否存在
+    await ssh.execCommand('mkdir -p /root/VPS配置WG 2>/dev/null');
+    
+    // 多位置查找所有客户端配置
+    console.log('在多个位置查找Wireguard客户端配置文件...');
+    const configCheckCmd = `
+      find /root/VPS配置WG /etc/wireguard /root -type f \\( -name "*-peer*-client.conf" -o -name "*client*.conf" -o -name "wg*.conf" \\) 2>/dev/null || echo "未找到客户端配置文件"
+    `;
     const configCheckResult = await ssh.execCommand(configCheckCmd);
     
+    // 如果找到配置文件
     if (configCheckResult.stdout && !configCheckResult.stdout.includes("未找到客户端配置文件")) {
       // 已有配置文件，收集所有配置信息
-      const configFiles = configCheckResult.stdout.split('\n').filter(line => line.trim() !== '');
+      const configFiles = configCheckResult.stdout.split('\n').filter(line => line.trim() !== '' && !line.includes('/etc/wireguard/wg') && !line.endsWith('.key') && !line.endsWith('.pub'));
+      
+      if (configFiles.length === 0) {
+        // 第二次尝试：查找Wireguard实例然后手动生成客户端配置
+        console.log('未找到客户端配置文件，尝试从实例生成...');
+        const wgInstances = await getWireguardInstances(ssh);
+        
+        if (wgInstances.length > 0) {
+          console.log(`找到 ${wgInstances.length} 个Wireguard实例，尝试生成配置...`);
+          
+          const clientConfigs = [];
+          let detailsObtained = false;
+          
+          // 从第一个实例生成配置
+          try {
+            const instanceDetails = await getWireguardInstanceDetails(ssh, wgInstances[0].name);
+            if (instanceDetails && instanceDetails.peers && instanceDetails.peers.length > 0) {
+              instanceDetails.peers.forEach(peer => {
+                if (peer.config) {
+                  clientConfigs.push({
+                    path: peer.file || `/root/VPS配置WG/${wgInstances[0].name}-peer${peer.number}-client.conf`,
+                    name: `${wgInstances[0].name}-peer${peer.number}-client.conf`,
+                    content: peer.config
+                  });
+                }
+              });
+              detailsObtained = true;
+            }
+          } catch (instanceError) {
+            console.warn('获取实例详情时出错，尝试其他方法:', instanceError);
+          }
+          
+          if (clientConfigs.length > 0) {
+            return {
+              success: true,
+              output: `已生成 ${clientConfigs.length} 个客户端配置文件。`,
+              clientConfigs: clientConfigs
+            };
+          } else if (detailsObtained) {
+            return {
+              success: true,
+              output: "找到Wireguard实例但未能自动生成配置文件。您可能需要重新部署或手动配置。",
+              clientConfigs: []
+            };
+          }
+        }
+        
+        // 第三次尝试：手动创建一个最基本的配置
+        console.log('尝试最后方法：检查网络接口创建基础配置');
+        const getIPCmd = 'curl -s ifconfig.me || hostname -I | awk \'{print $1}\'';
+        const ipResult = await ssh.execCommand(getIPCmd);
+        const serverIP = ipResult.stdout.trim();
+        
+        if (serverIP && !serverIP.includes(" ") && serverIP.includes(".")) {
+          // 创建一个基本配置作为应急
+          console.log(`使用IP ${serverIP} 创建基本配置`);
+          
+          // 生成密钥对
+          await ssh.execCommand('mkdir -p /root/VPS配置WG');
+          const keyResult = await ssh.execCommand('cd /root/VPS配置WG && wg genkey | tee client.key | wg pubkey > client.pub');
+          const getKeyCmd = 'cat /root/VPS配置WG/client.key';
+          const keyContent = await ssh.execCommand(getKeyCmd);
+          
+          if (keyContent.stdout.trim()) {
+            const basicConfig = `[Interface]
+PrivateKey = ${keyContent.stdout.trim()}
+Address = 10.0.1.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = 需要服务器公钥，请执行wg show命令查看
+Endpoint = ${serverIP}:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+`;
+            await ssh.execCommand(`echo '${basicConfig.replace(/'/g, "'\\''")}' > /root/VPS配置WG/emergency-client.conf`);
+            
+            return {
+              success: true,
+              output: "未找到标准客户端配置，已创建基本配置模板。请注意：此配置需要手动设置服务器公钥才能使用。",
+              clientConfigs: [{
+                path: '/root/VPS配置WG/emergency-client.conf',
+                name: 'emergency-client.conf',
+                content: basicConfig
+              }],
+              warning: "配置文件需要手动补充服务器公钥"
+            };
+          }
+        }
+        
+        return {
+          success: true,
+          output: "未检测到Wireguard客户端配置文件。您可以在Wireguard标签页选择服务器并点击'Wireguard部署'按钮进行自动部署。",
+          clientConfigs: []
+        };
+      }
+      
+      console.log(`找到 ${configFiles.length} 个可能的客户端配置文件`);
       
       // 获取所有配置文件内容
       const clientConfigs = [];
       for (const configFile of configFiles) {
-        const configContent = await ssh.execCommand(`cat "${configFile}"`);
-        if (configContent.stdout) {
-          clientConfigs.push({
-            path: configFile,
-            name: configFile.split('/').pop(),
-            content: configContent.stdout
-          });
+        try {
+          const configContent = await ssh.execCommand(`cat "${configFile}"`);
+          if (configContent.stdout && configContent.stdout.includes("[Interface]") && configContent.stdout.includes("[Peer]")) {
+            clientConfigs.push({
+              path: configFile,
+              name: configFile.split('/').pop(),
+              content: configContent.stdout
+            });
+          }
+        } catch (fileError) {
+          console.warn(`读取文件 ${configFile} 失败:`, fileError);
         }
       }
       
-      return {
-        success: true,
-        output: `已找到以下客户端配置文件:\n${configCheckResult.stdout}\n您可以使用"查找配置"按钮查看详细配置。`,
-        clientConfigs: clientConfigs
-      };
+      if (clientConfigs.length > 0) {
+        return {
+          success: true,
+          output: `已找到 ${clientConfigs.length} 个客户端配置文件。`,
+          clientConfigs: clientConfigs
+        };
+      } else {
+        return {
+          success: true,
+          output: "找到了一些文件，但它们不是有效的Wireguard客户端配置。您可以尝试重新部署。",
+          clientConfigs: []
+        };
+      }
     } else {
-      // 如果没有找到配置文件，提示用户执行部署流程
+      // 如果没有找到配置文件，检查Wireguard实例状态
+      const wgShowResult = await ssh.execCommand('wg show 2>/dev/null || echo "Wireguard未运行"');
+      
+      if (!wgShowResult.stdout.includes("Wireguard未运行")) {
+        console.log('Wireguard正在运行，但未找到配置文件，尝试手动获取接口信息...');
+        
+        // 有运行的实例但找不到配置文件，调用函数获取实例详情
+        const wgInterfaces = await getWireguardInstances(ssh);
+        if (wgInterfaces.length > 0) {
+          const firstInterface = wgInterfaces[0].name;
+          const instanceDetails = await getWireguardInstanceDetails(ssh, firstInterface);
+          
+          if (instanceDetails && instanceDetails.peers && instanceDetails.peers.length > 0) {
+            const clientConfigs = instanceDetails.peers.map(peer => ({
+              path: peer.file || `/root/VPS配置WG/${firstInterface}-peer${peer.number}-client.conf`,
+              name: `${firstInterface}-peer${peer.number}-client.conf`,
+              content: peer.config
+            })).filter(config => config.content);
+            
+            if (clientConfigs.length > 0) {
+              // 保存配置到文件
+              for (const config of clientConfigs) {
+                await ssh.execCommand(`mkdir -p /root/VPS配置WG && echo '${config.content.replace(/'/g, "'\\''")}' > "${config.path}"`);
+              }
+              
+              return {
+                success: true,
+                output: `找到 ${clientConfigs.length} 个运行中的Wireguard配置并保存到文件。`,
+                clientConfigs
+              };
+            }
+          }
+        }
+      }
+      
+      // 如果还是没找到，返回建议重新部署
       return {
         success: true,
-        output: "未检测到Wireguard配置文件。您可以在Wireguard标签页选择服务器并点击'Wireguard部署'按钮进行自动部署。",
+        output: "未检测到Wireguard客户端配置文件。您可以在Wireguard标签页选择服务器并点击'Wireguard部署'按钮进行自动部署。",
         clientConfigs: []
       };
     }
