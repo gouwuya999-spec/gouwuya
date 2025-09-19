@@ -617,9 +617,24 @@ createApp({
             this.sshOutput += `- ${config.path}\n`;
           }
           
-          // 保存所有配置文件
-          this.clientConfigs = wireguardResult.clientConfigs;
-          this.foundConfigFiles = wireguardResult.clientConfigs.map(config => config.path);
+          // 保存所有配置文件并按peer编号排序
+          this.clientConfigs = wireguardResult.clientConfigs.sort((a, b) => {
+            const aName = a.name || a.path.split('/').pop();
+            const bName = b.name || b.path.split('/').pop();
+            
+            // 提取peer编号进行数字排序
+            const aMatch = aName.match(/peer(\d+)/);
+            const bMatch = bName.match(/peer(\d+)/);
+            
+            if (aMatch && bMatch) {
+              return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+            }
+            
+            // 如果没有peer编号，按文件名排序
+            return aName.localeCompare(bName);
+          });
+          
+          this.foundConfigFiles = this.clientConfigs.map(config => config.path);
           
           // 显示第一个配置文件
           await this.showConfigFile(0);
@@ -675,6 +690,24 @@ createApp({
             }
             
             if (this.clientConfigs.length > 0) {
+              // 对找到的配置文件进行排序
+              this.clientConfigs.sort((a, b) => {
+                const aName = a.name || a.path.split('/').pop();
+                const bName = b.name || b.path.split('/').pop();
+                
+                // 提取peer编号进行数字排序
+                const aMatch = aName.match(/peer(\d+)/);
+                const bMatch = bName.match(/peer(\d+)/);
+                
+                if (aMatch && bMatch) {
+                  return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+                }
+                
+                // 如果没有peer编号，按文件名排序
+                return aName.localeCompare(bName);
+              });
+              
+              this.foundConfigFiles = this.clientConfigs.map(config => config.path);
               this.sshOutput += `找到 ${this.clientConfigs.length} 个有效的Wireguard客户端配置文件\n`;
               // 显示第一个配置文件
               await this.showConfigFile(0);
@@ -760,7 +793,7 @@ createApp({
       }
     },
     
-    // 设置当前活动标签页
+    // 设置当前活动标签页 (热加载测试成功!)
     setActiveTab(tab) {
       this.activeTab = tab;
       

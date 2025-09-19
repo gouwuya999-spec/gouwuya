@@ -3,11 +3,36 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const packageJson = require('./package.json');
 // 添加应用版本号
 const APP_VERSION = packageJson.version;
+
+// 开发环境热加载支持
+if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+  try {
+    require('electron-reloader')(module, {
+      debug: true,
+      watchRenderer: true
+    });
+    console.log('热加载已启用');
+  } catch (err) {
+    console.log('热加载启用失败:', err);
+  }
+}
+
 // 隐藏命令行窗口
 if (process.platform === 'win32') {
   process.env.ELECTRON_ENABLE_LOGGING = 0;
 }
 const path = require('path');
+
+// 获取应用资源路径
+function getResourcePath(filename) {
+  if (app.isPackaged) {
+    // 打包后的应用，使用resources目录
+    return path.join(process.resourcesPath, filename);
+  } else {
+    // 开发环境，使用当前目录
+    return path.join(__dirname, filename);
+  }
+}
 // const Store = require('electron-store'); // 注释掉原来的导入
 let Store; // 声明Store变量为全局变量
 let store; // 声明store变量为全局变量
@@ -52,19 +77,48 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      // 优化渲染性能
+      offscreen: false,
+      backgroundThrottling: false
     },
-    // 添加以下设置，隐藏背景窗口
+    // 完全消除窗口闪烁的配置
     backgroundColor: '#FFF',
-    show: false
+    show: false,
+    frame: true,
+    titleBarStyle: 'default',
+    // 禁用所有可能的动画和效果
+    skipTaskbar: false,
+    alwaysOnTop: false,
+    // 设置最小尺寸
+    minWidth: 800,
+    minHeight: 600,
+    // 禁用窗口动画
+    transparent: false,
+    // 设置窗口位置居中
+    center: true,
+    // 禁用拖拽
+    resizable: true,
+    // 禁用最大化按钮动画
+    maximizable: true,
+    minimizable: true,
+    closable: true
   });
 
   // 移除菜单栏
   mainWindow.setMenu(null);
 
-  // 等待加载完成后显示窗口
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+  // 完全隐藏窗口直到内容加载完成
+  mainWindow.hide();
+
+  // 等待DOM内容加载完成后再显示
+  mainWindow.webContents.once('dom-ready', () => {
+    // 再等待一小段时间确保所有资源加载完成
+    setTimeout(() => {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.center();
+    }, 100);
   });
 
   // 加载主页面
@@ -87,7 +141,10 @@ app.whenReady().then(async () => {
     dialog.showErrorBox('模块加载错误', '无法加载electron-store模块，应用可能无法正常工作。');
   }
   
-  createWindow();
+  // 延迟创建窗口，确保所有模块都已加载
+  setTimeout(() => {
+    createWindow();
+  }, 300);
 
   app.on('activate', function () {
     // 在macOS上，当点击dock图标且没有其他窗口打开时
@@ -1925,8 +1982,32 @@ ipcMain.handle('execute-wireguard-script', async (event, serverId) => {
     
     // 如果找到配置文件
     if (configCheckResult.stdout && !configCheckResult.stdout.includes("未找到客户端配置文件")) {
-      // 已有配置文件，收集所有配置信息
-      const configFiles = configCheckResult.stdout.split('\n').filter(line => line.trim() !== '' && !line.includes('/etc/wireguard/wg') && !line.endsWith('.key') && !line.endsWith('.pub'));
+      // 已有配置文件，收集所有配置信息并去重
+      const allConfigFiles = configCheckResult.stdout.split('\n').filter(line => line.trim() !== '' && !line.includes('/etc/wireguard/wg') && !line.endsWith('.key') && !line.endsWith('.pub'));
+      
+      // 去重：使用Set来确保每个文件路径只出现一次
+      const uniqueConfigFiles = [...new Set(allConfigFiles)];
+      console.log(`找到 ${allConfigFiles.length} 个配置文件，去重后 ${uniqueConfigFiles.length} 个`);
+      
+      // 按文件名排序，确保peer编号顺序正确
+      const sortedConfigFiles = uniqueConfigFiles.sort((a, b) => {
+        const aName = a.split('/').pop();
+        const bName = b.split('/').pop();
+        
+        // 提取peer编号进行数字排序
+        const aMatch = aName.match(/peer(\d+)/);
+        const bMatch = bName.match(/peer(\d+)/);
+        
+        if (aMatch && bMatch) {
+          return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+        }
+        
+        // 如果没有peer编号，按文件名排序
+        return aName.localeCompare(bName);
+      });
+      
+      console.log(`排序后的配置文件:`, sortedConfigFiles.map(f => f.split('/').pop()));
+      const configFiles = sortedConfigFiles;
       
       if (configFiles.length === 0) {
         // 第二次尝试：查找Wireguard实例然后手动生成客户端配置
@@ -2025,10 +2106,18 @@ PersistentKeepalive = 25
       
       console.log(`找到 ${configFiles.length} 个可能的客户端配置文件`);
       
-      // 获取所有配置文件内容
+      // 获取所有配置文件内容并去重
       const clientConfigs = [];
+      const processedPaths = new Set(); // 用于跟踪已处理的文件路径
+      
       for (const configFile of configFiles) {
         try {
+          // 跳过已经处理过的文件
+          if (processedPaths.has(configFile)) {
+            console.log(`跳过重复文件: ${configFile}`);
+            continue;
+          }
+          
           const configContent = await ssh.execCommand(`cat "${configFile}"`);
           if (configContent.stdout && configContent.stdout.includes("[Interface]") && configContent.stdout.includes("[Peer]")) {
             clientConfigs.push({
@@ -2036,6 +2125,8 @@ PersistentKeepalive = 25
               name: configFile.split('/').pop(),
               content: configContent.stdout
             });
+            processedPaths.add(configFile);
+            console.log(`添加配置文件: ${configFile}`);
           }
         } catch (fileError) {
           console.warn(`读取文件 ${configFile} 失败:`, fileError);
@@ -2156,10 +2247,13 @@ ipcMain.handle('get-current-month-bill', async () => {
     console.log(`获取当前(${year}年${month}月)账单数据`);
     
     // 调用Python脚本获取当前月账单
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=get_current_month_bill'
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2246,13 +2340,16 @@ ipcMain.handle('get-monthly-bill', async (event, year, month) => {
     }
     
     // 调用Python脚本获取指定月账单
-    const pythonProcess = spawn('python', [
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
       '-u',  // 添加-u参数确保Python输出不被缓冲
-      'billing_manager.py',
+      billingManagerPath,
       '--action=get_monthly_bill',
       `--year=${year}`,
       `--month=${month}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2304,11 +2401,14 @@ ipcMain.handle('get-monthly-bill-summary', async () => {
     console.log('获取月账单汇总数据');
     
     // 调用Python脚本获取月账单汇总
-    const pythonProcess = spawn('python', [
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
       '-u',  // 添加-u参数
-      'billing_manager.py',
+      billingManagerPath,
       '--action=get_monthly_bill_summary'
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2390,12 +2490,15 @@ ipcMain.handle('save-monthly-billing-to-excel', async () => {
     const filePath = saveResult.filePath;
     
     // 调用Python脚本导出Excel
-    const pythonProcess = spawn('python', [
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
       '-u',  // 添加-u参数
-      'billing_manager.py',
+      billingManagerPath,
       '--action=save_monthly_billing_to_excel',
       `--output=${filePath}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2433,11 +2536,14 @@ ipcMain.handle('get-all-vps', async () => {
     console.log('获取所有VPS数据');
     
     // 调用Python脚本获取所有VPS
-    const pythonProcess = spawn('python', [
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
       '-u',  // 添加-u参数
-      'billing_manager.py',
+      billingManagerPath,
       '--action=get_all_vps'
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2528,11 +2634,14 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
     const vpsDataJson = JSON.stringify(cleanVpsData);
     
     // 调用Python脚本保存VPS
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=save_vps',
       `--vps_data=${vpsDataJson}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2554,10 +2663,13 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
           try {
             const data = JSON.parse(result);
             // 确保更新VPS价格，这样在月账单统计中显示正确的数据
-            const updateProcess = spawn('python', [
-              'billing_manager.py',
+            const billingManagerPath = getResourcePath('billing_manager.py');
+            const updateProcess = spawn('py', [
+              billingManagerPath,
               '--action=update_prices'
-            ]);
+            ], {
+              cwd: app.isPackaged ? process.resourcesPath : __dirname
+            });
             
             updateProcess.on('close', (updateCode) => {
               if (updateCode === 0) {
@@ -2589,11 +2701,14 @@ ipcMain.handle('delete-vps', async (event, vpsName) => {
     console.log(`删除VPS: ${vpsName}`);
     
     // 调用Python脚本删除VPS
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=delete_vps',
       `--vps_name=${vpsName}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2630,10 +2745,13 @@ ipcMain.handle('init-sample-vps-data', async () => {
     console.log('初始化示例VPS数据');
     
     // 调用Python脚本初始化示例数据
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=init_sample_data'
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2673,11 +2791,14 @@ ipcMain.handle('batch-add-vps', async (event, vpsList) => {
     const vpsListJson = JSON.stringify(vpsList);
     
     // 调用Python脚本批量添加VPS
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=batch_add_vps',
       `--vps_list=${vpsListJson}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2737,10 +2858,13 @@ ipcMain.handle('update-vps-prices', async () => {
     console.log('更新VPS价格和使用时长');
     
     // 调用Python脚本更新VPS价格
-    const pythonProcess = spawn('python', [
-      'billing_manager.py',
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
+      billingManagerPath,
       '--action=update_prices'
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';
@@ -2792,14 +2916,17 @@ ipcMain.handle('save-monthly-bill-to-excel', async (event, year, month) => {
     const filePath = saveResult.filePath;
     
     // 调用Python脚本导出Excel
-    const pythonProcess = spawn('python', [
+    const billingManagerPath = getResourcePath('billing_manager.py');
+    const pythonProcess = spawn('py', [
       '-u',  // 添加-u参数确保输出不被缓冲
-      'billing_manager.py',
+      billingManagerPath,
       '--action=save_monthly_billing_to_excel',
       `--output=${filePath}`,
       `--specific_year=${year}`,
       `--specific_month=${month}`
-    ]);
+    ], {
+      cwd: app.isPackaged ? process.resourcesPath : __dirname
+    });
     
     let result = '';
     let error = '';

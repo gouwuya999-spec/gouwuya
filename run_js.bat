@@ -1,6 +1,0 @@
-@echo off
-echo 正在创建VPS管理系统快捷方式...
-cscript //nologo create_shortcut.js
-echo.
-echo 操作完成！请按任意键退出...
-pause > nul 

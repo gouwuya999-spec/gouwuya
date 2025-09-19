@@ -1,420 +1,28 @@
 nat_fee: 0
-total_bill: 53.38
+total_bill: 126.1
 vps_servers:
-- cancel_date: 2025/04/20
+- cancel_date: 2025/06/26
   country: 德国 法兰克福 黑森州
-  ip_address: 45.76.87.99
-  name: VPS-1
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/09
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.24.227
-  name: VPS-2
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- country: 德国 法兰克福 黑森州
   ip_address: 45.32.152.154
   name: VPS-3
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
-  use_nat: false
-- cancel_date: 2025/03/28
-  country: 德国 法兰克福 黑森州
-  ip_address: 45.76.91.80
-  name: VPS-4
-  price_per_month: 20
+  price_per_month: 20.0
   purchase_date: 2024/12/16
   start_date: 2024/12/16
   status: 销毁
   total_price: 0.0
   usage_period: 0天0小时0分钟
   use_nat: false
-- cancel_date: 2025/03/28
+- cancel_date: 2025/06/11
   country: 德国 法兰克福 黑森州
-  ip_address: 95.179.243.79
-  name: VPS-5
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/09
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.26.216
-  name: VPS-6
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- country: 德国 法兰克福 黑森州
   ip_address: 95.179.249.188
   name: VPS-7
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
-  use_nat: false
-- cancel_date: 2025/03/28
-  country: 德国 法兰克福 黑森州
-  ip_address: 45.76.85.124
-  name: VPS-8
-  price_per_month: 20
+  price_per_month: 20.0
   purchase_date: 2024/12/16
   start_date: 2024/12/16
   status: 销毁
   total_price: 0.0
   usage_period: 0天0小时0分钟
   use_nat: false
-- cancel_date: 2025/03/28
-  country: 德国 法兰克福 黑森州
-  ip_address: 199.247.1.51
-  name: VPS-9
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/15
-  country: 德国 法兰克福 黑森州
-  ip_address: 199.247.1.51
-  name: VPS-10
-  price_per_month: 20
-  purchase_date: 2024/12/16
-  start_date: 2024/12/16
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/28
-  country: 德国 法兰克福 黑森州
-  ip_address: 104.238.159.218
-  name: VPS-11
-  price_per_month: 20
-  purchase_date: 2025/02/01
-  start_date: 2025/02/01
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/18
-  country: 德国 法兰克福 黑森州
-  ip_address: 136.244.94.66
-  name: VPS-12
-  price_per_month: 20
-  purchase_date: 2025/02/01
-  start_date: 2025/02/01
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/18
-  country: 德国 法兰克福 黑森州
-  ip_address: 45.77.55.165
-  name: VPS-13
-  price_per_month: 20
-  purchase_date: 2025/02/01
-  start_date: 2025/02/01
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/18
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.20.187
-  name: VPS-14
-  price_per_month: 20
-  purchase_date: 2025/02/01
-  start_date: 2025/02/01
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/18
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.20.187
-  name: VPS-15
-  price_per_month: 20
-  purchase_date: 2025/02/01
-  start_date: 2025/02/01
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/05/02
-  country: 德国 法兰克福 黑森州
-  ip_address: 199.247.4.71
-  name: VPS-16-1
-  price_per_month: 20
-  purchase_date: 2025/02/09
-  start_date: 2025/02/09
-  status: 销毁
-  total_price: 1.29
-  usage_period: 1天23小时59分钟
-  use_nat: true
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 95.179.253.165
-  name: VPS-16-2
-  price_per_month: 20
-  purchase_date: 2025/02/09
-  start_date: 2025/02/09
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/05/02
-  country: 德国 法兰克福 黑森州
-  ip_address: 192.248.184.162
-  name: VPS-16-3
-  price_per_month: 20
-  purchase_date: 2025/02/09
-  start_date: 2025/02/09
-  status: 销毁
-  total_price: 1.29
-  usage_period: 1天23小时59分钟
-  use_nat: true
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 199.247.3.86
-  name: VPS-17-1
-  price_per_month: 20
-  purchase_date: 2025/02/09
-  start_date: 2025/02/09
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/05/02
-  country: 德国 法兰克福 黑森州
-  ip_address: 199.247.3.86
-  name: VPS-17-2
-  price_per_month: 20
-  purchase_date: 2025/02/09
-  start_date: 2025/02/09
-  status: 销毁
-  total_price: 1.29
-  usage_period: 1天23小时59分钟
-  use_nat: true
-- country: 德国 法兰克福 黑森州
-  ip_address: 45.32.153.55
-  name: VPS-18-1
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
-  use_nat: false
-- country: 德国 法兰克福 黑森州
-  ip_address: 199.247.7.210
-  name: VPS-18-2
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
-  use_nat: false
-- cancel_date: 2025/03/28
-  country: 德国 法兰克福 黑森州
-  ip_address: 95.179.166.183
-  name: VPS-20-2-1
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/21
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.18.46
-  name: VPS-20-2-2
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/03
-  country: 德国 法兰克福 黑森州
-  ip_address: 136.244.83.121
-  name: VPS-20-2-3
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 136.244.83.121
-  name: VPS-20-1
-  price_per_month: 20
-  purchase_date: 2025/02/14
-  start_date: 2025/02/14
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 140.82.34.251
-  name: VPS-21-1
-  price_per_month: 20
-  purchase_date: 2025/02/24
-  start_date: 2025/02/24
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 136.244.91.174
-  name: VPS-21-2
-  price_per_month: 20
-  purchase_date: 2025/02/24
-  start_date: 2025/02/24
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/03/29
-  country: 德国 法兰克福 黑森州
-  ip_address: 80.240.16.242
-  name: VPS-22-1
-  price_per_month: 20
-  purchase_date: 2025/02/24
-  start_date: 2025/02/24
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/05/02
-  country: 德国 法兰克福 黑森州
-  ip_address: 95.179.164.185
-  name: VPS-22-2
-  price_per_month: 20
-  purchase_date: 2025/02/24
-  start_date: 2025/02/24
-  status: 销毁
-  total_price: 1.29
-  usage_period: 1天23小时59分钟
-  use_nat: true
-- cancel_date: 2025/04/24
-  country: 德国 法兰克福 黑森州
-  ip_address: 45.76.85.34
-  name: VPS-22-3
-  price_per_month: 20
-  purchase_date: 2025/02/24
-  start_date: 2025/02/24
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/04/20
-  country: 荷兰 阿姆斯特丹 北荷兰省
-  ip_address: 95.179.183.226
-  name: HL-1（VPS-23）
-  price_per_month: 20
-  purchase_date: 2025/03/12
-  start_date: 2025/03/12
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/15
-  country: 新加坡 新加坡 South West
-  ip_address: 45.32.122.118
-  name: VPS-24-1-XJP
-  price_per_month: 20
-  purchase_date: 2025/03/29
-  start_date: 2025/03/29
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/15
-  country: 新加坡 新加坡 South West
-  ip_address: 149.28.150.62
-  name: VPS-24-2-XJP
-  price_per_month: 20
-  purchase_date: 2025/03/29
-  start_date: 2025/03/29
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: false
-- cancel_date: 2025/04/24
-  country: 新加坡 新加坡 South West
-  ip_address: 45.77.40.215
-  name: VPS-25-1-XJP
-  price_per_month: 20
-  purchase_date: 2025/03/30
-  start_date: 2025/03/30
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/04/24
-  country: 新加坡 新加坡 South West
-  ip_address: 66.42.49.74
-  name: VPS-25-2-XJP
-  price_per_month: 20
-  purchase_date: 2025/03/30
-  start_date: 2025/03/30
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/04/24
-  country: 荷兰 阿姆斯特丹 北荷兰省
-  ip_address: 185.92.223.243
-  name: VPS-26-1-HL
-  price_per_month: 20
-  purchase_date: 2025/03/30
-  start_date: 2025/03/30
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
-- cancel_date: 2025/04/17
-  country: 加拿大 多伦多 安大略
-  ip_address: 137.220.55.154
-  name: VPS-27-1-JND
-  price_per_month: 20
-  purchase_date: 2025/03/30
-  start_date: 2025/03/30
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
 - country: 德国 法兰克福 黑森州
   ip_address: 95.179.243.79
   name: VPS-28-1-DG
@@ -422,18 +30,19 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
   use_nat: false
-- country: 印度 班加羅爾 卡纳塔克邦
+- cancel_date: 2025/06/26
+  country: 印度 班加羅爾 卡纳塔克邦
   ip_address: 139.84.136.95
   name: VPS-29-1-YD
-  price_per_month: 20
+  price_per_month: 20.0
   purchase_date: 2025/04/15
   start_date: 2025/04/15
-  status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
   use_nat: false
 - country: 荷兰 阿姆斯特丹 北荷兰省
   ip_address: 45.76.34.98
@@ -442,20 +51,9 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
   use_nat: false
-- cancel_date: 2025/04/24
-  country: 印度 班加羅爾 卡纳塔克邦
-  ip_address: 139.84.221.210
-  name: VPS-31-1-YD
-  price_per_month: 20
-  purchase_date: 2025/04/17
-  start_date: 2025/04/17
-  status: 销毁
-  total_price: 0.0
-  usage_period: 0天0小时0分钟
-  use_nat: true
 - country: 德国 法兰克福 黑森州
   ip_address: 95.179.252.158
   name: VPS-32-1-DG
@@ -463,6 +61,122 @@ vps_servers:
   purchase_date: 2025/04/29
   start_date: 2025/04/29
   status: 在用
-  total_price: 5.89
-  usage_period: 9天3小时4分钟
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/08/30
+  country: 德国 法兰克福 黑森州
+  ip_address: 80.240.21.32
+  name: VPS-33-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/02
+  start_date: 2025/05/02
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 216.173.107.253
+  name: VPS-34-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/07/26
+  country: 德国 法兰克福 黑森州
+  ip_address: 31.56.138.229
+  name: VPS-35-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- cancel_date: 2025/08/16
+  country: 德国 法兰克福 黑森州
+  ip_address: 92.119.182.132
+  name: VPS-36-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 31.56.138.156
+  name: VPS-37-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 92.119.182.243
+  name: VPS-38-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 91.246.193.64
+  name: VPS-39-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 慕尼黑 巴伐利亚州
+  ip_address: 104.239.77.251
+  name: VPS-40-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: ''
+  country: 德国 法兰克福 黑森州
+  ip_address: 199.247.7.210
+  name: VPS-18-2-1
+  price_per_month: 20.0
+  purchase_date: 2025/02/14
+  start_date: 2025/02/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/08/30
+  country: 肯尼亚 奈洛比 內羅畢郡
+  ip_address: 102.68.86.180
+  name: VPS-41-1-肯尼亚-1
+  price_per_month: 20.0
+  purchase_date: 2025/07/20
+  start_date: 2025/07/20
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- cancel_date: ''
+  country: 肯尼亚 奈洛比 內羅畢郡
+  ip_address: 102.68.86.183
+  name: VPS-42-1-肯尼亚
+  price_per_month: 20.0
+  purchase_date: 2025/07/26
+  start_date: 2025/07/26
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
   use_nat: false
