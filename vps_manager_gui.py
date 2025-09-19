@@ -78,6 +78,10 @@ class VPSManagerGUI:
             self.refresh_timer = None
             self.usage_auto_refresh_started = False
             
+            # 设置自动保存定时器
+            self.auto_save_timer = None
+            self.start_auto_save_timer()
+            
             # 设置剪贴板支持
             self.setup_clipboard_support()
             
@@ -162,11 +166,50 @@ class VPSManagerGUI:
             except:
                 pass
 
+    def start_auto_save_timer(self):
+        """启动自动保存定时器，每5分钟自动保存一次VPS数据"""
+        try:
+            # 取消已有的计时器
+            if self.auto_save_timer:
+                self.root.after_cancel(self.auto_save_timer)
+                
+            # 执行自动保存
+            self.auto_save_data()
+            
+            # 设置下一次自动保存的计时器（5分钟）
+            self.auto_save_timer = self.root.after(300000, self.start_auto_save_timer)
+            logger.info("自动保存定时器已设置 - 下次保存将在5分钟后")
+        except Exception as e:
+            logger.error(f"设置自动保存定时器时出错: {str(e)}")
+            # 即使出错，也尝试设置下一次保存，确保程序不会停止自动保存
+            try:
+                self.auto_save_timer = self.root.after(300000, self.start_auto_save_timer)
+            except:
+                pass
+                
+    def auto_save_data(self):
+        """自动保存所有VPS数据"""
+        try:
+            # 使用billing_manager保存数据
+            self.vps_manager.billing_manager.save_data()
+            logger.info("VPS数据已自动保存")
+            # 更新状态栏信息，但只显示短暂时间
+            original_status = self.status_var.get()
+            self.status_var.set("VPS数据已自动保存")
+            # 3秒后恢复原状态信息
+            self.root.after(3000, lambda: self.status_var.set(original_status))
+        except Exception as e:
+            logger.error(f"自动保存VPS数据失败: {str(e)}")
+
     def on_closing(self):
         """窗口关闭时执行清理操作"""
         # 取消定时器
         if self.refresh_timer:
             self.root.after_cancel(self.refresh_timer)
+            
+        # 取消自动保存定时器
+        if self.auto_save_timer:
+            self.root.after_cancel(self.auto_save_timer)
         
         # 断开所有连接
         try:
@@ -2041,176 +2084,6 @@ class VPSManagerGUI:
         self.total_var = tk.StringVar()
         self.total_var.set("$0.00")
         ttk.Label(bill_frame, textvariable=self.total_var, font=("Helvetica", 12, "bold")).pack(side=tk.LEFT, pady=5)
-
-echo "所有配置已完成，WireGuard 服务已重启并设置为开机自启动。"
-echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 ${WG_DIR} 目录下的客户端配置和二维码."
-"""
-        
-        # 在新线程中执行部署
-        threading.Thread(target=self.deploy_wireguard_thread, 
-                         args=(selected_vps, progress_text, config_text, qr_frame, save_button, wireguard_script)).start()
-
-    def deploy_wireguard_thread(self, vps_list, progress_text, config_text, qr_frame, save_button, wireguard_script):
-        """在单独线程中执行WireGuard部署"""
-        try:
-            for vps_name in vps_list:
-                # 获取VPS连接
-                connection = self.vps_manager.vps_connection_manager.get_connection(vps_name)
-                if not connection or not connection.connected:
-                    # 尝试连接
-                    self.update_progress(progress_text, f"正在连接到 {vps_name}...", "info")
-                    if not connection:
-                        self.update_progress(progress_text, f"未找到VPS {vps_name}的连接信息", "error", "#FF0000")
-                        continue
-                    
-                    if not connection.connect():
-                        self.update_progress(progress_text, f"无法连接到 {vps_name}，跳过", "error", "#FF0000")
-                        continue
-                
-                self.update_progress(progress_text, f"在 {vps_name} 上开始部署WireGuard...", "info")
-                
-                # 1. 设置DNS
-                self.update_progress(progress_text, f"[{vps_name}] 设置DNS...", "info")
-                connection.execute_command("echo 'nameserver 1.1.1.1' > /etc/resolv.conf")
-                
-                # 2. 安装vim编辑器
-                self.update_progress(progress_text, f"[{vps_name}] 安装vim编辑器...", "info")
-                stdout, stderr = connection.execute_command("apt update && apt install -y vim", timeout=300)
-                if stderr and "ERROR" in stderr:
-                    self.update_progress(progress_text, f"[{vps_name}] 安装vim失败: {stderr}", "error", "#FF0000")
-                
-                # 3. 创建WireGuard配置脚本文件
-                self.update_progress(progress_text, f"[{vps_name}] 创建WireGuard配置脚本...", "info")
-                # 由于无法直接使用vim交互，我们直接创建文件
-                stdout, stderr = connection.execute_command(f"cat > VPS动态配置wireguard.sh << 'EOF'\n{wireguard_script}\nEOF")
-                
-                # 4. 赋予执行权限
-                self.update_progress(progress_text, f"[{vps_name}] 赋予脚本执行权限...", "info")
-                connection.execute_command("chmod +x VPS动态配置wireguard.sh")
-                
-                # 5. 运行脚本
-                self.update_progress(progress_text, f"[{vps_name}] 运行WireGuard部署脚本（需要几分钟）...", "info")
-                stdout, stderr = connection.execute_command("sudo ./VPS动态配置wireguard.sh", timeout=600)
-                
-                if stderr and "ERROR" in stderr:
-                    self.update_progress(progress_text, f"[{vps_name}] 脚本执行出错: {stderr}", "error", "#FF0000")
-                
-                # 获取客户端配置文件和二维码
-                self.update_progress(progress_text, f"[{vps_name}] 获取WireGuard客户端配置...", "info")
-                stdout, _ = connection.execute_command("cat /root/VPS配置WG/wg0-peer1-client.conf")
-                
-                if stdout:
-                    # 更新配置文本
-                    self.root.after(0, lambda: self.update_config_text(config_text, stdout))
-                    
-                    # 获取二维码（作为ASCII艺术）
-                    qr_stdout, _ = connection.execute_command("qrencode -t ansiutf8 < /root/VPS配置WG/wg0-peer1-client.conf")
-                    if qr_stdout:
-                        self.update_progress(progress_text, f"[{vps_name}] 客户端配置二维码 (ASCII 格式):\n{qr_stdout}", "info")
-                    
-                    # 尝试获取实际图像二维码文件
-                    connection.execute_command("qrencode -o /tmp/wireguard_qr.png < /root/VPS配置WG/wg0-peer1-client.conf")
-                    # 创建临时目录存储二维码
-                    os.makedirs("temp", exist_ok=True)
-                    local_qr_path = os.path.join("temp", f"{vps_name}_wireguard_qr.png")
-                    
-                    if connection.download_file("/tmp/wireguard_qr.png", local_qr_path):
-                        self.update_progress(progress_text, f"[{vps_name}] 已下载二维码图像", "success", "#008000")
-                        # 在UI线程中显示二维码图像
-                        self.root.after(0, lambda: self.display_qr_image(qr_frame, local_qr_path))
-                    
-                    # 启用保存按钮
-                    self.root.after(0, lambda: save_button.configure(state=tk.NORMAL))
-                else:
-                    self.update_progress(progress_text, f"[{vps_name}] 无法获取客户端配置", "error", "#FF0000")
-                
-                self.update_progress(progress_text, f"[{vps_name}] WireGuard部署完成！", "success", "#008000")
-            
-            self.update_progress(progress_text, "所有VPS的WireGuard部署已完成", "success", "#008000")
-            
-        except Exception as e:
-            self.update_progress(progress_text, f"部署过程中发生错误: {str(e)}", "error", "#FF0000")
-
-    def update_progress(self, text_widget, message, tag="info", color="#000000"):
-        """更新进度文本框"""
-        self.root.after(0, lambda: self.append_progress_to_widget(text_widget, message, tag, color))
-    
-    def append_progress_to_widget(self, text_widget, message, tag="info", color="#000000"):
-        """向指定的文本框添加进度信息"""
-        text_widget.config(state=tk.NORMAL)
-        
-        # 添加时间戳
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        
-        # 添加文本
-        if text_widget.index('end-1c') != '1.0':  # 如果不是空文本，先添加换行
-            text_widget.insert(tk.END, "\n")
-        
-        start_index = text_widget.index(tk.END)
-        text_widget.insert(tk.END, f"[{timestamp}] {message}")
-        end_index = text_widget.index(tk.END)
-        
-        # 创建标签并配置颜色
-        text_widget.tag_add(tag, start_index, end_index)
-        text_widget.tag_config(tag, foreground=color)
-        
-        # 滚动到底部
-        text_widget.see(tk.END)
-        text_widget.config(state=tk.DISABLED)
-    
-    def update_config_text(self, text_widget, config_content):
-        """更新配置文本框"""
-        text_widget.config(state=tk.NORMAL)
-        text_widget.delete(1.0, tk.END)
-        text_widget.insert(tk.END, config_content)
-        text_widget.config(state=tk.DISABLED)
-    
-    def display_qr_image(self, frame, image_path):
-        """在框架中显示二维码图像"""
-        # 清除框架中的现有内容
-        for widget in frame.winfo_children():
-            widget.destroy()
-            
-        try:
-            # 加载和显示图像
-            image = Image.open(image_path)
-            # 调整大小，保持比例
-            width, height = image.size
-            max_size = 300
-            if width > max_size or height > max_size:
-                ratio = min(max_size/width, max_size/height)
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-                image = image.resize((new_width, new_height), Image.LANCZOS)
-                
-            photo = ImageTk.PhotoImage(image)
-            
-            # 创建标签来显示图像
-            label = ttk.Label(frame, image=photo)
-            label.image = photo  # 保持引用，防止被垃圾回收
-            label.pack(padx=10, pady=10)
-            
-            # 添加图像说明
-            ttk.Label(frame, text="WireGuard客户端配置二维码").pack(pady=5)
-            
-        except Exception as e:
-            ttk.Label(frame, text=f"无法显示二维码图像: {str(e)}").pack(pady=10)
-            
-    def save_wireguard_config(self, config_content):
-        """保存WireGuard配置文件"""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".conf",
-            filetypes=[("WireGuard配置文件", "*.conf"), ("所有文件", "*.*")],
-            title="保存WireGuard配置"
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(config_content)
-                messagebox.showinfo("成功", f"WireGuard配置已保存到: {file_path}")
-            except Exception as e:
-                messagebox.showerror("错误", f"保存配置失败: {str(e)}")
 
     def set_billing_period(self):
         """设置账单计算年月"""

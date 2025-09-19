@@ -1,3 +1,182 @@
 nat_fee: 0
-total_bill: 0
-vps_servers: []
+total_bill: 126.1
+vps_servers:
+- cancel_date: 2025/06/26
+  country: 德国 法兰克福 黑森州
+  ip_address: 45.32.152.154
+  name: VPS-3
+  price_per_month: 20.0
+  purchase_date: 2024/12/16
+  start_date: 2024/12/16
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- cancel_date: 2025/06/11
+  country: 德国 法兰克福 黑森州
+  ip_address: 95.179.249.188
+  name: VPS-7
+  price_per_month: 20.0
+  purchase_date: 2024/12/16
+  start_date: 2024/12/16
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 95.179.243.79
+  name: VPS-28-1-DG
+  price_per_month: 20
+  purchase_date: 2025/04/15
+  start_date: 2025/04/15
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/06/26
+  country: 印度 班加羅爾 卡纳塔克邦
+  ip_address: 139.84.136.95
+  name: VPS-29-1-YD
+  price_per_month: 20.0
+  purchase_date: 2025/04/15
+  start_date: 2025/04/15
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 荷兰 阿姆斯特丹 北荷兰省
+  ip_address: 45.76.34.98
+  name: VPS-30-1-HL
+  price_per_month: 20
+  purchase_date: 2025/04/15
+  start_date: 2025/04/15
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 95.179.252.158
+  name: VPS-32-1-DG
+  price_per_month: 20
+  purchase_date: 2025/04/29
+  start_date: 2025/04/29
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/08/30
+  country: 德国 法兰克福 黑森州
+  ip_address: 80.240.21.32
+  name: VPS-33-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/02
+  start_date: 2025/05/02
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 216.173.107.253
+  name: VPS-34-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/07/26
+  country: 德国 法兰克福 黑森州
+  ip_address: 31.56.138.229
+  name: VPS-35-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- cancel_date: 2025/08/16
+  country: 德国 法兰克福 黑森州
+  ip_address: 92.119.182.132
+  name: VPS-36-1-DG
+  price_per_month: 20.0
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 31.56.138.156
+  name: VPS-37-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 92.119.182.243
+  name: VPS-38-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 法兰克福 黑森州
+  ip_address: 91.246.193.64
+  name: VPS-39-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- country: 德国 慕尼黑 巴伐利亚州
+  ip_address: 104.239.77.251
+  name: VPS-40-1-DG
+  price_per_month: 20
+  purchase_date: 2025/05/14
+  start_date: 2025/05/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: ''
+  country: 德国 法兰克福 黑森州
+  ip_address: 199.247.7.210
+  name: VPS-18-2-1
+  price_per_month: 20.0
+  purchase_date: 2025/02/14
+  start_date: 2025/02/14
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false
+- cancel_date: 2025/08/30
+  country: 肯尼亚 奈洛比 內羅畢郡
+  ip_address: 102.68.86.180
+  name: VPS-41-1-肯尼亚-1
+  price_per_month: 20.0
+  purchase_date: 2025/07/20
+  start_date: 2025/07/20
+  status: 销毁
+  total_price: 0.0
+  usage_period: 0天0小时0分钟
+  use_nat: false
+- cancel_date: ''
+  country: 肯尼亚 奈洛比 內羅畢郡
+  ip_address: 102.68.86.183
+  name: VPS-42-1-肯尼亚
+  price_per_month: 20.0
+  purchase_date: 2025/07/26
+  start_date: 2025/07/26
+  status: 在用
+  total_price: 12.61
+  usage_period: 18天21小时54分钟
+  use_nat: false

@@ -147,7 +147,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       clipboard.clear();
       return true;
     }
-  }
+  },
+  
+  // 强制同步Wireguard配置
+  forceSyncWireguardConfigs: (serverId) => ipcRenderer.invoke('force-sync-wireguard-client-configs', serverId)
 });
 
 // 添加IPC API到window对象
@@ -177,5 +180,6 @@ window.electronAPI = {
   getWireguardInstances: (serverId) => ipcRenderer.invoke('get-wireguard-instances', serverId),
   getWireguardInstanceDetails: (serverId, instanceName) => ipcRenderer.invoke('get-wireguard-instance-details', serverId, instanceName),
   addWireguardPeer: (serverId, instanceName) => ipcRenderer.invoke('add-wireguard-peer', serverId, instanceName),
-  deleteWireguardPeer: (serverId, instanceName, peerNumber) => ipcRenderer.invoke('delete-wireguard-peer', serverId, instanceName, peerNumber)
+  deleteWireguardPeer: (serverId, instanceName, peerNumber) => ipcRenderer.invoke('delete-wireguard-peer', serverId, instanceName, peerNumber),
+  forceSyncWireguardConfigs: (serverId) => ipcRenderer.invoke('force-sync-wireguard-client-configs', serverId)
 }; 

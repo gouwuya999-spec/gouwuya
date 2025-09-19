@@ -100,7 +100,8 @@ createApp({
       batchVpsData: '',
       batchVpsList: [],
       // IP地址检测相关变量
-      isDetectingIp: false
+      isDetectingIp: false,
+      isRefreshingWireguard: false,  // 标记是否正在刷新Wireguard
     };
   },
   
@@ -115,8 +116,9 @@ createApp({
     this.initAvailableYears();
     
     // 如果在月账单标签页，加载月账单汇总
-    if (this.activeTab === 'monthly-billing') {
+    if (this.activeTab === 'monthly-bill') {
       this.loadMonthlyBillSummary();
+      this.generateMonthlyBill();
     }
     
     // 加载VPS数据列表
@@ -132,6 +134,20 @@ createApp({
           };
         }
       });
+    }
+  },
+  
+  // 添加watch选项，监听实例选择变化
+  watch: {
+    // 当选择的实例改变时，立即加载实例详情
+    wireguardSelectedInstance: {
+      handler: function(newInstance, oldInstance) {
+        if (newInstance && newInstance !== oldInstance) {
+          console.log(`Wireguard实例已切换: ${oldInstance} -> ${newInstance}，重新加载详情`);
+          this.loadInstanceDetails();
+        }
+      },
+      immediate: false
     }
   },
   
@@ -498,7 +514,16 @@ createApp({
             await this.generateQRCodeFromConfig(result.clientConfig);
           }
           
-          alert('Wireguard已自动部署完成！');
+          // 处理警告信息
+          if (result.warning) {
+            // 显示成功但有警告的消息
+            alert(`Wireguard部署状态: ${result.warning}`);
+          } else {
+            alert('Wireguard已自动部署完成！');
+          }
+        } else {
+          // 显示错误信息
+          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
         }
       } catch (error) {
         console.error('部署Wireguard失败:', error);
@@ -506,6 +531,7 @@ createApp({
           success: false,
           error: error.message || '未知错误'
         };
+        alert(`部署过程中发生错误: ${error.message || '未知错误'}\n这可能是临时性问题，请稍后通过SSH终端检查部署状态。`);
       } finally {
         this.isDeploying = false;
       }
@@ -571,48 +597,90 @@ createApp({
       this.clientConfigs = [];  // 重置客户端配置列表
       
       try {
-        // 使用执行Wireguard脚本函数获取所有客户端配置
+        // 检查是否已存在SSH连接
+        const connectResult = await window.electronAPI.testSSHConnection(this.currentConnectedServer.id);
+        if (!connectResult.success) {
+          // 尝试连接服务器
+          await window.electronAPI.openSSHTerminal(this.currentConnectedServer.id);
+          this.sshOutput += `> 已连接到服务器: ${this.currentConnectedServer.name || this.currentConnectedServer.host}\n`;
+        }
+        
+        // 使用增强版的执行Wireguard脚本函数获取所有客户端配置
+        this.sshOutput += `> 正在全面搜索服务器上的Wireguard配置...\n`;
         const wireguardResult = await window.electronAPI.executeWireguardScript(this.currentConnectedServer.id);
         
         if (wireguardResult.success && wireguardResult.clientConfigs && wireguardResult.clientConfigs.length > 0) {
           this.sshOutput += `找到 ${wireguardResult.clientConfigs.length} 个客户端配置文件:\n`;
           
-          // 保存所有配置文件
-          this.clientConfigs = wireguardResult.clientConfigs;
-          this.foundConfigFiles = wireguardResult.clientConfigs.map(config => config.path);
+          // 打印配置文件路径
+          for (const config of wireguardResult.clientConfigs) {
+            this.sshOutput += `- ${config.path}\n`;
+          }
+          
+          // 保存所有配置文件并按peer编号排序
+          this.clientConfigs = wireguardResult.clientConfigs.sort((a, b) => {
+            const aName = a.name || a.path.split('/').pop();
+            const bName = b.name || b.path.split('/').pop();
+            
+            // 提取peer编号进行数字排序
+            const aMatch = aName.match(/peer(\d+)/);
+            const bMatch = bName.match(/peer(\d+)/);
+            
+            if (aMatch && bMatch) {
+              return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+            }
+            
+            // 如果没有peer编号，按文件名排序
+            return aName.localeCompare(bName);
+          });
+          
+          this.foundConfigFiles = this.clientConfigs.map(config => config.path);
           
           // 显示第一个配置文件
           await this.showConfigFile(0);
           return;
+        } else if (wireguardResult.warning) {
+          this.sshOutput += `警告: ${wireguardResult.warning}\n`;
         }
         
-        // 如果上面的方法找不到配置，继续使用原来的方法查找
-        // 首先尝试直接查找客户端配置文件（明确包含client关键字的）
-        const clientSearchCommand = {
+        // 如果上述方法没有找到配置，尝试更广泛的搜索
+        this.sshOutput += `> 未找到标准配置，尝试全磁盘搜索...\n`;
+        
+        // 全磁盘搜索客户端配置文件（注意: 这可能会很慢，所以设置超时）
+        const fullSearchCommand = {
           serverId: this.currentConnectedServer.id,
-          command: 'find /etc/wireguard -name "*client*.conf" -o -name "wg[0-9]*_client.conf" -o -name "peer*.conf" -o -name "wg[0-9]*-peer[0-9]*-client.conf" 2>/dev/null || echo "未找到客户端配置文件"'
+          command: 'timeout 30s find / -type f -name "*.conf" 2>/dev/null | grep -E "wg|wireguard|client|peer" || echo "搜索超时或未找到"'
         };
         
-        const clientResult = await window.electronAPI.executeSSHCommand(clientSearchCommand);
+        const fullSearchResult = await window.electronAPI.executeSSHCommand(fullSearchCommand);
         
-        if (clientResult.success && clientResult.stdout && !clientResult.stdout.includes("未找到客户端配置文件")) {
-          this.sshOutput += `找到以下客户端配置文件:\n${clientResult.stdout}\n`;
+        if (fullSearchResult.success && fullSearchResult.stdout && !fullSearchResult.stdout.includes("搜索超时") && !fullSearchResult.stdout.includes("未找到")) {
+          this.sshOutput += `全磁盘搜索找到以下可能的配置文件:\n${fullSearchResult.stdout}\n`;
           
-          // 获取找到的所有配置文件路径
-          const configFiles = clientResult.stdout.split('\n').filter(line => line.trim() !== '');
-          if (configFiles.length > 0) {
+          // 过滤掉系统配置文件，只保留可能的客户端配置
+          const possibleConfigFiles = fullSearchResult.stdout.split('\n')
+            .filter(line => line.trim() !== '' && 
+                   (line.includes('/wg') || line.includes('client') || line.includes('peer')) &&
+                   !line.includes('/etc/systemd/') && 
+                   !line.includes('/var/lib/') &&
+                   !line.includes('/usr/share/'));
+          
+          if (possibleConfigFiles.length > 0) {
             // 存储找到的配置文件
-            this.foundConfigFiles = configFiles;
+            this.foundConfigFiles = possibleConfigFiles;
             
             // 读取所有配置内容
-            for (const configPath of configFiles) {
+            for (const configPath of possibleConfigFiles) {
               const catCommand = {
                 serverId: this.currentConnectedServer.id,
-                command: `cat "${configPath}"`
+                command: `cat "${configPath}" 2>/dev/null`
               };
               
               const contentResult = await window.electronAPI.executeSSHCommand(catCommand);
-              if (contentResult.success && contentResult.stdout) {
+              if (contentResult.success && contentResult.stdout && 
+                  contentResult.stdout.includes("[Interface]") && 
+                  contentResult.stdout.includes("PrivateKey") &&
+                  contentResult.stdout.includes("[Peer]")) {
                 this.clientConfigs.push({
                   path: configPath,
                   name: configPath.split('/').pop(),
@@ -621,18 +689,62 @@ createApp({
               }
             }
             
-            // 显示第一个配置文件
-            await this.showConfigFile(0);
-            return;
+            if (this.clientConfigs.length > 0) {
+              // 对找到的配置文件进行排序
+              this.clientConfigs.sort((a, b) => {
+                const aName = a.name || a.path.split('/').pop();
+                const bName = b.name || b.path.split('/').pop();
+                
+                // 提取peer编号进行数字排序
+                const aMatch = aName.match(/peer(\d+)/);
+                const bMatch = bName.match(/peer(\d+)/);
+                
+                if (aMatch && bMatch) {
+                  return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+                }
+                
+                // 如果没有peer编号，按文件名排序
+                return aName.localeCompare(bName);
+              });
+              
+              this.foundConfigFiles = this.clientConfigs.map(config => config.path);
+              this.sshOutput += `找到 ${this.clientConfigs.length} 个有效的Wireguard客户端配置文件\n`;
+              // 显示第一个配置文件
+              await this.showConfigFile(0);
+              return;
+            }
           }
         }
         
-        // 以下是原来的代码，继续执行其他查找逻辑...
+        // 如果还是没有找到，尝试手动生成一个应急配置
+        this.sshOutput += `> 未找到现有配置，检查Wireguard状态并尝试手动创建...\n`;
         
-        // ... existing code ...
+        // 检查Wireguard是否正在运行
+        const wgShowCommand = {
+          serverId: this.currentConnectedServer.id,
+          command: 'wg show 2>/dev/null || echo "Wireguard未运行"'
+        };
+        
+        const wgShowResult = await window.electronAPI.executeSSHCommand(wgShowCommand);
+        
+        if (wgShowResult.success && !wgShowResult.stdout.includes("Wireguard未运行")) {
+          this.sshOutput += `检测到Wireguard正在运行，但未找到配置文件\n`;
+          this.sshOutput += `请尝试重新部署Wireguard或手动查看服务器上的配置\n`;
+        } else {
+          this.sshOutput += `未检测到运行中的Wireguard服务\n`;
+          this.sshOutput += `建议：点击"Wireguard部署"按钮进行自动部署\n`;
+        }
+        
+        // 提示用户Wireguard运行状态
+        this.sshOutput += `\n未找到有效的Wireguard客户端配置文件。\n`;
+        this.sshOutput += `如果您确定配置文件存在，请执行以下操作：\n`;
+        this.sshOutput += `1. 通过SSH终端手动查找 (find / -name "*client*.conf")\n`;
+        this.sshOutput += `2. 检查Wireguard状态 (systemctl status wg-quick@wg0)\n`;
+        this.sshOutput += `3. 重新部署Wireguard\n`;
       } catch (error) {
         console.error('查找Wireguard配置失败:', error);
         this.sshOutput += `错误: ${error.message || '未知错误'}\n`;
+        this.sshOutput += `建议重新连接服务器并尝试部署Wireguard\n`;
       }
     },
     
@@ -681,17 +793,24 @@ createApp({
       }
     },
     
-    // 设置当前活动标签页
+    // 设置当前活动标签页 (热加载测试成功!)
     setActiveTab(tab) {
       this.activeTab = tab;
       
-      // 切换到月账单标签页时初始化年份选项并加载账单汇总
-      if (tab === 'monthly-billing') {
-        this.initAvailableYears();
+      // 根据切换的标签页执行相应的操作
+      if (tab === 'monthly-bill') {
+        // 月账单标签页
         this.loadMonthlyBillSummary();
-        
-        // 清空之前的月账单详情数据
-        this.monthlyBill = {};
+        // 确保加载所有VPS数据
+        this.loadVpsDataList();
+        // 生成当前选择年月的账单
+        this.generateMonthlyBill();
+      } else if (tab === 'wireguard') {
+        // 切换到Wireguard选项卡时，重置选中状态
+        this.wireguardSelectedServer = '';
+        this.wireguardSelectedInstance = '';
+        this.wireguardInstances = [];
+        this.wireguardInstanceDetails = null;
       }
     },
     
@@ -928,6 +1047,11 @@ createApp({
           // 更新价格和使用时长
           this.updateVpsPrices();
           console.log('已加载VPS数据列表:', this.vpsDataList);
+          
+          // 添加以下代码：在加载VPS数据后自动更新月账单统计
+          if (this.activeTab === 'monthly-bill') {
+            this.generateMonthlyBill();
+          }
         } else {
           console.error('加载VPS数据列表失败:', result.error);
         }
@@ -1066,8 +1190,25 @@ createApp({
           this.editingVps.start_date = this.formatDateToSystem(this.editingVps.start_date);
         }
         
+        // 创建一个干净的数据对象，确保所有字段类型正确
+        const cleanedVpsData = {
+          name: String(this.editingVps.name),
+          ip_address: String(this.editingVps.ip_address || ''),
+          country: String(this.editingVps.country || ''),
+          status: String(this.editingVps.status || '在用'),
+          price_per_month: parseFloat(this.editingVps.price_per_month) || 0,
+          purchase_date: String(this.editingVps.purchase_date || ''),
+          start_date: String(this.editingVps.start_date || ''),
+          use_nat: Boolean(this.editingVps.use_nat)
+        };
+        
+        // 只在销毁状态时添加销毁时间
+        if (cleanedVpsData.status === '销毁' && this.editingVps.cancel_date) {
+          cleanedVpsData.cancel_date = String(this.editingVps.cancel_date);
+        }
+        
         // 保存VPS数据
-        const result = await window.electronAPI.saveVps(this.editingVps);
+        const result = await window.electronAPI.saveVps(cleanedVpsData);
         
         if (result.success) {
           console.log('保存VPS成功:', result.data);
@@ -1086,6 +1227,11 @@ createApp({
           
           // 重新生成当前月账单
           this.generateMonthlyBill();
+          
+          // 如果当前在月账单统计页面，同时更新月账单汇总
+          if (this.activeTab === 'monthly-bill') {
+            this.loadMonthlyBillSummary();
+          }
         } else {
           console.error('保存VPS失败:', result.error);
           alert('保存VPS失败: ' + result.error);
@@ -1115,6 +1261,11 @@ createApp({
             
             // 重新生成当前月账单
             this.generateMonthlyBill();
+            
+            // 如果当前在月账单统计页面，同时更新月账单汇总
+            if (this.activeTab === 'monthly-bill') {
+              this.loadMonthlyBillSummary();
+            }
           } else {
             console.error('删除VPS失败:', result.error);
             alert('删除VPS失败: ' + result.error);
@@ -1139,6 +1290,49 @@ createApp({
       }, 0);
       
       return total.toFixed(2);
+    },
+    
+    // 格式化日期显示
+    formatDateForDisplay(dateStr) {
+      if (!dateStr) return '-';
+      // 将YYYY/MM/DD转换为更友好的显示格式
+      return dateStr.replace(/(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3');
+    },
+    
+    // 计算VPS使用时长（如果服务器没有提供）
+    calculateUsagePeriod(vps) {
+      if (!vps || !vps.purchase_date) return '-';
+      
+      try {
+        // 购买日期
+        const purchaseDate = new Date(vps.purchase_date.replace(/\//g, '-'));
+        
+        // 结束日期（如果已销毁则使用销毁日期，否则使用当前日期）
+        let endDate;
+        if (vps.status === '销毁' && vps.cancel_date) {
+          endDate = new Date(vps.cancel_date.replace(/\//g, '-'));
+        } else {
+          endDate = new Date();
+        }
+        
+        // 计算时间差
+        const diffTime = Math.abs(endDate - purchaseDate);
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        // 根据天数计算月和日
+        const months = Math.floor(diffDays / 30);
+        const days = diffDays % 30;
+        
+        // 格式化输出
+        if (months > 0) {
+          return `${months}个月${days}天`;
+        } else {
+          return `${days}天`;
+        }
+      } catch (error) {
+        console.error('计算使用时长失败:', error);
+        return '-';
+      }
     },
     
     // 验证日期格式是否为YYYY-MM-DD或YYYY/MM/DD
@@ -1445,7 +1639,7 @@ createApp({
     },
     
     // IP地址检测功能
-    async detectIpLocation(ip) {
+    async detectIpLocation(ip, batchIndex) {
       if (!ip) {
         alert('请输入IP地址');
         return;
@@ -1486,10 +1680,19 @@ createApp({
             this.editingVps.country = locationInfo;
           } else if (this.showBatchAddVpsModal) {
             // 当前在批量添加VPS界面
-            const lastIndex = this.batchVpsList.length - 1;
-            if (lastIndex >= 0) {
-              this.batchVpsList[lastIndex].ip_address = ip;
-              this.batchVpsList[lastIndex].country = locationInfo;
+            if (batchIndex !== undefined) {
+              // 使用传入的批量添加行索引
+              if (batchIndex >= 0 && batchIndex < this.batchVpsList.length) {
+                this.batchVpsList[batchIndex].ip_address = ip;
+                this.batchVpsList[batchIndex].country = locationInfo;
+              }
+            } else {
+              // 兼容旧逻辑，使用最后一行（不推荐）
+              const lastIndex = this.batchVpsList.length - 1;
+              if (lastIndex >= 0) {
+                this.batchVpsList[lastIndex].ip_address = ip;
+                this.batchVpsList[lastIndex].country = locationInfo;
+              }
             }
           }
           
@@ -1556,7 +1759,7 @@ createApp({
       }
       
       const ip = this.batchVpsList[index].ip_address;
-      const locationInfo = await this.detectIpLocation(ip);
+      const locationInfo = await this.detectIpLocation(ip, index);
       if (locationInfo) {
         this.batchVpsList[index].country = locationInfo;
       }
@@ -1733,6 +1936,251 @@ createApp({
       } catch (error) {
         console.error('批量添加VPS失败:', error);
         alert('批量添加VPS失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 添加loadWireguardInstances方法如果不存在，并更新其实现
+    async loadWireguardInstances() {
+      if (!this.wireguardSelectedServer) return;
+      
+      try {
+        this.wireguardLoading = true;
+        this.wireguardInstances = [];
+        this.wireguardInstanceDetails = null;
+        this.wireguardSelectedInstance = '';
+        // 清除所有相关状态，确保切换VPS后不会显示前一个VPS的配置
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
+        
+        const result = await window.electronAPI.getWireguardInstances(this.wireguardSelectedServer);
+        console.log('Wireguard实例列表:', result);
+        
+        if (result.success) {
+          this.wireguardInstances = result.instances || [];
+          
+          // 如果只有一个实例，自动选择它
+          if (this.wireguardInstances.length === 1) {
+            this.wireguardSelectedInstance = this.wireguardInstances[0];
+            await this.loadInstanceDetails();
+          }
+        } else {
+          console.error('获取Wireguard实例失败:', result.error);
+          alert('获取Wireguard实例失败: ' + result.error);
+        }
+      } catch (error) {
+        console.error('加载Wireguard实例列表失败:', error);
+        alert('加载Wireguard实例列表失败: ' + (error.message || '未知错误'));
+      } finally {
+        this.wireguardLoading = false;
+      }
+    },
+    
+    // 添加强制同步Wireguard配置的方法
+    async forceSyncWireguardConfig() {
+      if (!this.wireguardSelectedServer) {
+        alert('请先选择服务器');
+        return;
+      }
+      
+      try {
+        this.isRefreshingWireguard = true;
+        console.log('开始强制同步Wireguard配置...');
+        
+        // 调用主进程的强制同步方法
+        const result = await window.electronAPI.forceSyncWireguardConfigs(this.wireguardSelectedServer);
+        
+        if (result.success) {
+          console.log('强制同步成功:', result);
+          this.wireguardInstances = result.instances || [];
+          
+          // 如果只有一个实例，自动选择它
+          if (this.wireguardInstances.length === 1) {
+            this.wireguardSelectedInstance = this.wireguardInstances[0];
+            await this.loadInstanceDetails();
+          }
+          
+          alert('已成功同步Wireguard配置');
+        } else {
+          console.error('强制同步失败:', result.error);
+          alert('强制同步Wireguard配置失败: ' + result.error);
+          
+          // 强制同步失败后尝试普通刷新
+          await this.loadWireguardInstances();
+        }
+      } catch (error) {
+        console.error('强制同步Wireguard配置出错:', error);
+        alert('强制同步Wireguard配置出错: ' + (error.message || '未知错误'));
+      } finally {
+        this.isRefreshingWireguard = false;
+      }
+    },
+    
+    // 添加loadInstanceDetails方法
+    async loadInstanceDetails() {
+      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {
+        return;
+      }
+      
+      try {
+        this.wireguardLoading = true;
+        this.wireguardInstanceDetails = null; // 清除之前的实例详情
+        this.viewingPeer = null;
+        this.viewPeerQrCode = null;
+        this.peerResult = null;
+        
+        console.log(`加载Wireguard实例[${this.wireguardSelectedInstance}]详情...`);
+        
+        const result = await window.electronAPI.getWireguardInstanceDetails(
+          this.wireguardSelectedServer,
+          this.wireguardSelectedInstance
+        );
+        
+        console.log('加载实例详情结果:', result);
+        
+        if (result.success) {
+          // 完全替换详情对象，确保端口映射范围等数据被更新
+          this.wireguardInstanceDetails = JSON.parse(JSON.stringify(result.details));
+          console.log('实例详情加载成功:', JSON.stringify(this.wireguardInstanceDetails, null, 2));
+          console.log('端口映射范围:', this.wireguardInstanceDetails.portMappingRange);
+          
+          // 检查是否有peer配置
+          if (result.details.peers && result.details.peers.length > 0) {
+            console.log(`成功加载${result.details.peers.length}个peer配置`);
+          } else {
+            console.log('没有找到peer配置，尝试强制同步配置');
+            // 如果没有peer，可以自动尝试强制同步一次
+            const syncResult = await window.electronAPI.forceSyncWireguardConfigs(this.wireguardSelectedServer);
+            if (syncResult.success) {
+              console.log('强制同步成功，重新加载实例详情');
+              // 重新加载实例详情
+              const refreshResult = await window.electronAPI.getWireguardInstanceDetails(
+                this.wireguardSelectedServer,
+                this.wireguardSelectedInstance
+              );
+              if (refreshResult.success) {
+                this.wireguardInstanceDetails = JSON.parse(JSON.stringify(refreshResult.details));
+                console.log('重新加载实例详情成功:', refreshResult.details);
+                console.log('更新后的端口映射范围:', this.wireguardInstanceDetails.portMappingRange);
+              }
+            }
+          }
+        } else {
+          console.error('加载实例详情失败:', result.error);
+          alert('加载Wireguard实例详情失败: ' + result.error);
+        }
+      } catch (error) {
+        console.error('加载实例详情异常:', error);
+        alert('加载Wireguard实例详情失败: ' + (error.message || '未知错误'));
+      } finally {
+        this.wireguardLoading = false;
+      }
+    },
+    
+    // 查看Peer配置
+    async viewPeerConfig(peer) {
+      if (!peer) return;
+      
+      try {
+        console.log(`查看Peer ${peer.number} 配置:`, peer);
+        this.viewingPeer = peer;
+        
+        // 生成二维码
+        if (peer.config) {
+          const qrResult = await window.electronAPI.generateQRCode(peer.config);
+          if (qrResult.success) {
+            this.viewPeerQrCode = qrResult.qrCodeImage;
+          } else {
+            console.error('生成二维码失败:', qrResult.error);
+          }
+        } else {
+          console.error('配置内容为空，无法生成二维码');
+        }
+      } catch (error) {
+        console.error('查看Peer配置失败:', error);
+        alert('查看Peer配置失败: ' + (error.message || '未知错误'));
+      }
+    },
+    
+    // 添加Peer节点
+    async addPeer() {
+      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {
+        alert('请先选择服务器和Wireguard实例');
+        return;
+      }
+      
+      try {
+        this.addingPeer = true;
+        console.log(`为服务器[${this.wireguardSelectedServer}]的Wireguard实例[${this.wireguardSelectedInstance}]添加Peer`);
+        
+        const result = await window.electronAPI.addWireguardPeer(
+          this.wireguardSelectedServer,
+          this.wireguardSelectedInstance
+        );
+        
+        console.log('添加Peer结果:', result);
+        
+        this.peerResult = result;
+        
+        if (result.success) {
+          // 重新加载实例详情
+          this.loadInstanceDetails();
+        }
+      } catch (error) {
+        console.error('添加Peer失败:', error);
+        this.peerResult = {
+          success: false,
+          error: error.message || '未知错误'
+        };
+      } finally {
+        this.addingPeer = false;
+      }
+    },
+    
+    // Wireguard peer管理相关方法
+    async deployWireguard(serverId) {
+      if (!serverId) return;
+      
+      try {
+        this.isDeploying = true;
+        this.deployingServerId = serverId;
+        this.wireguardResult = null;
+        this.deployProgress = { percent: 0, message: '准备部署Wireguard...' };
+        
+        const result = await window.electronAPI.deployWireguard(serverId);
+        console.log('Wireguard部署结果:', result);
+        
+        this.wireguardResult = result;
+        
+        if (result.success && result.clientConfigs && result.clientConfigs.length > 0) {
+          this.clientConfigs = result.clientConfigs;
+          this.showConfigFile(0);
+        }
+        
+        // 刷新实例列表
+        if (result.success) {
+          await this.loadWireguardInstances();
+          
+          // 处理警告信息
+          if (result.warning) {
+            // 显示成功但有警告的消息
+            alert(`Wireguard部署状态: ${result.warning}`);
+          } else {
+            alert('Wireguard已自动部署完成！');
+          }
+        } else {
+          // 显示错误信息
+          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
+        }
+      } catch (error) {
+        console.error('部署Wireguard失败:', error);
+        this.wireguardResult = {
+          success: false,
+          error: error.message || '未知错误'
+        };
+        alert(`部署过程中发生错误: ${error.message || '未知错误'}\n这可能是临时性问题，请稍后通过SSH终端检查部署状态。`);
+      } finally {
+        this.isDeploying = false;
       }
     },
   }
