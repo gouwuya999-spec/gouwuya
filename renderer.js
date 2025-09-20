@@ -127,11 +127,26 @@ createApp({
     // 设置接收Wireguard部署进度的事件处理
     if (window.electronAPI && window.electronAPI.onWireguardDeployProgress) {
       window.electronAPI.onWireguardDeployProgress((data) => {
+        console.log('收到Wireguard部署进度:', data, '当前部署服务器ID:', this.deployingServerId);
         if (data.serverId === this.deployingServerId) {
           this.deployProgress = {
             percent: data.percent,
             message: data.message
           };
+          console.log('更新部署进度:', this.deployProgress);
+        } else {
+          console.log('服务器ID不匹配，忽略进度更新');
+        }
+      });
+    }
+    
+    // 设置接收Wireguard实例更新的事件处理
+    if (window.electronAPI && window.electronAPI.onWireguardInstancesUpdated) {
+      window.electronAPI.onWireguardInstancesUpdated((data) => {
+        console.log('收到Wireguard实例更新通知:', data);
+        // 自动刷新当前服务器的Wireguard实例列表
+        if (this.selectedServer) {
+          this.loadWireguardInstances();
         }
       });
     }
@@ -438,19 +453,26 @@ createApp({
     async executeWireguardInTerminal() {
       if (!this.currentConnectedServer) return;
       
-      this.sshOutput += `> 正在执行Wireguard部署...\n`;
+      // 添加重新部署确认对话框
+      const confirmMessage = `确定要重新部署 ${this.currentConnectedServer.name} 的Wireguard吗？\n\n这将：\n• 停止现有的Wireguard实例\n• 清理旧的配置文件\n• 重新生成IPv4配置\n• 覆盖现有配置\n\n注意：此操作不可撤销！`;
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+      
+      this.sshOutput += `> 正在执行Wireguard重新部署...\n`;
       
       try {
         const result = await window.electronAPI.executeWireguardScript(this.currentConnectedServer.id);
         
         if (result.success) {
-          this.sshOutput += `Wireguard部署已准备就绪!\n\n`;
+          this.sshOutput += `Wireguard重新部署已准备就绪!\n\n`;
           
           if (result.output) {
             this.sshOutput += result.output + '\n';
           }
           
-          this.sshOutput += `\nWireguard已经自动部署完成，配置文件保存在/root/VPS配置WG/目录下。\n`;
+          this.sshOutput += `\nWireguard已经自动重新部署完成，配置文件保存在/root/VPS配置WG/目录下。\n`;
           this.sshOutput += `您可以使用"查找配置"按钮自动查找配置文件并生成二维码。\n`;
           this.sshOutput += `或者使用以下命令查看客户端配置：\n`;
           this.sshOutput += `cat /root/VPS配置WG/wg0-peer1-client.conf\n`;
@@ -466,6 +488,13 @@ createApp({
     // 从服务器列表部署Wireguard
     async deployWireguardFromList(server) {
       try {
+        // 添加重新部署确认对话框
+        const confirmMessage = `确定要重新部署 ${server.name} 的Wireguard吗？\n\n这将：\n• 停止现有的Wireguard实例\n• 清理旧的配置文件\n• 重新生成IPv4配置\n• 覆盖现有配置\n\n注意：此操作不可撤销！`;
+        
+        if (!confirm(confirmMessage)) {
+          return;
+        }
+        
         this.isDeploying = true;
         this.wireguardResult = null;
         this.qrCodeImage = null;
@@ -477,7 +506,7 @@ createApp({
         // 重置进度
         this.deployProgress = {
           percent: 0,
-          message: '准备部署...'
+          message: '准备重新部署...'
         };
         
         // 先测试连接
@@ -517,13 +546,13 @@ createApp({
           // 处理警告信息
           if (result.warning) {
             // 显示成功但有警告的消息
-            alert(`Wireguard部署状态: ${result.warning}`);
+            alert(`Wireguard重新部署状态: ${result.warning}`);
           } else {
-            alert('Wireguard已自动部署完成！');
+            alert('Wireguard已自动重新部署完成！\n\n✅ 已清理旧配置\n✅ 已重新生成IPv4配置\n✅ 已覆盖现有配置');
           }
         } else {
           // 显示错误信息
-          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
+          alert(`Wireguard重新部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
         }
       } catch (error) {
         console.error('部署Wireguard失败:', error);
@@ -548,40 +577,6 @@ createApp({
       }
     },
     
-    // 从终端输出中提取配置并生成二维码
-    async generateQRFromTerminal() {
-      try {
-        // 尝试从终端输出中提取WireGuard配置
-        const terminalOutput = this.sshOutput;
-        
-        // 使用正则表达式查找可能的WireGuard配置段落
-        const configRegex = /\[Interface\][\s\S]*?PrivateKey[\s\S]*?Address[\s\S]*?\[Peer\][\s\S]*?PublicKey[\s\S]*?AllowedIPs[\s\S]*?(Endpoint|PersistentKeepalive)/;
-        const match = terminalOutput.match(configRegex);
-        
-        if (match && match[0]) {
-          const configData = match[0];
-          console.log('从终端输出中提取到WireGuard配置');
-          
-          // 如果是新配置，将其添加到foundConfigFiles中
-          this.configContent = configData;
-          if (this.foundConfigFiles.length === 0) {
-            this.foundConfigFiles = ['从终端提取的配置'];
-            this.currentConfigIndex = 0;
-          }
-          
-          // 显示配置区域
-          this.showConfigContent = true;
-          
-          // 从提取到的配置生成二维码
-          await this.generateQRCodeFromConfig(configData);
-        } else {
-          this.sshOutput += '\n未能从终端输出中提取WireGuard配置。请先查看配置文件，例如使用命令:\ncat /etc/wireguard/wg0_client.conf\n';
-        }
-      } catch (error) {
-        console.error('从终端提取配置失败:', error);
-        this.sshOutput += `\n生成二维码失败: ${error.message || '未知错误'}\n`;
-      }
-    },
     
     // 自动查找Wireguard配置文件
     async findWireguardConfig() {
@@ -635,6 +630,9 @@ createApp({
           });
           
           this.foundConfigFiles = this.clientConfigs.map(config => config.path);
+          console.log('设置foundConfigFiles:', this.foundConfigFiles);
+          console.log('设置showConfigContent为true');
+          this.showConfigContent = true;
           
           // 显示第一个配置文件
           await this.showConfigFile(0);
@@ -748,9 +746,13 @@ createApp({
       }
     },
     
-    // 显示配置文件内容和二维码
+    // 显示配置文件内容
     async showConfigFile(index) {
-      if (index < 0 || index >= this.foundConfigFiles.length) return;
+      console.log('showConfigFile被调用，index:', index, 'foundConfigFiles.length:', this.foundConfigFiles.length);
+      if (index < 0 || index >= this.foundConfigFiles.length) {
+        console.log('索引超出范围，返回');
+        return;
+      }
       
       this.currentConfigIndex = index;
       
@@ -759,6 +761,7 @@ createApp({
         const config = this.clientConfigs[index];
         this.configContent = config.content;
         this.sshOutput += `\n正在显示配置文件: ${config.name}\n`;
+        console.log('显示配置文件:', config.name, '内容长度:', config.content.length);
         
         // 生成二维码
         await this.generateQRCodeFromConfig(config.content);
@@ -2123,6 +2126,18 @@ createApp({
         this.peerResult = result;
         
         if (result.success) {
+          // 如果返回了配置但没有二维码，生成二维码
+          if (result.peer && result.peer.config && !result.qrCode) {
+            try {
+              const qrResult = await window.electronAPI.generateQRCode(result.peer.config);
+              if (qrResult.success) {
+                this.peerResult.qrCode = qrResult.qrCodeImage;
+              }
+            } catch (qrError) {
+              console.error('生成二维码失败:', qrError);
+            }
+          }
+          
           // 重新加载实例详情
           this.loadInstanceDetails();
         }
@@ -2134,6 +2149,41 @@ createApp({
         };
       } finally {
         this.addingPeer = false;
+      }
+    },
+    
+    // 删除Peer节点
+    async deletePeer(peerNumber) {
+      if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {
+        alert('请先选择服务器和Wireguard实例');
+        return;
+      }
+      
+      if (!confirm(`确定要删除Peer ${peerNumber} 吗？此操作不可撤销。`)) {
+        return;
+      }
+      
+      try {
+        console.log(`删除服务器[${this.wireguardSelectedServer}]的Wireguard实例[${this.wireguardSelectedInstance}]的Peer ${peerNumber}`);
+        
+        const result = await window.electronAPI.deleteWireguardPeer(
+          this.wireguardSelectedServer,
+          this.wireguardSelectedInstance,
+          peerNumber
+        );
+        
+        console.log('删除Peer结果:', result);
+        
+        if (result.success) {
+          alert(`成功删除Peer ${peerNumber}`);
+          // 重新加载实例详情以更新Peer列表
+          this.loadInstanceDetails();
+        } else {
+          alert(`删除Peer失败: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('删除Peer失败:', error);
+        alert(`删除Peer失败: ${error.message || '未知错误'}`);
       }
     },
     
@@ -2164,13 +2214,13 @@ createApp({
           // 处理警告信息
           if (result.warning) {
             // 显示成功但有警告的消息
-            alert(`Wireguard部署状态: ${result.warning}`);
+            alert(`Wireguard重新部署状态: ${result.warning}`);
           } else {
-            alert('Wireguard已自动部署完成！');
+            alert('Wireguard已自动重新部署完成！\n\n✅ 已清理旧配置\n✅ 已重新生成IPv4配置\n✅ 已覆盖现有配置');
           }
         } else {
           // 显示错误信息
-          alert(`Wireguard部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
+          alert(`Wireguard重新部署失败: ${result.error || '未知错误'}\n可能仍在后台部署中，请稍后通过SSH终端检查。`);
         }
       } catch (error) {
         console.error('部署Wireguard失败:', error);

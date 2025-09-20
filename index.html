@@ -16,58 +16,6 @@
       overflow-x: hidden;
     }
     
-    /* 固定标题样式 */
-    #fixed-motto {
-      position: fixed;
-      top: 16px;
-      left: calc(180px + (100% - 180px)/2);
-      transform: translateX(-50%);
-      font-size: 18px;
-      font-weight: bold;
-      z-index: 9999;
-      white-space: nowrap;
-      pointer-events: none;
-      text-align: center;
-      width: auto;
-    }
-    
-    #fixed-motto .motto-container {
-      display: inline-block;
-      padding: 5px 15px;
-      border-radius: 5px;
-      background: rgba(255, 255, 255, 0.15);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
-    
-    #fixed-motto .motto-text {
-      background: linear-gradient(90deg, 
-        #ff9800, #f44336, #e91e63, #9c27b0, #673ab7, 
-        #3f51b5, #2196f3, #03a9f4, #00bcd4, #009688, 
-        #4CAF50, #8BC34A, #CDDC39, #FFEB3B, #FFC107);
-      background-size: 400% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      animation: motto-animation 6s linear infinite;
-    }
-    
-    #fixed-motto i {
-      color: #ff9800;
-      margin-right: 8px;
-      animation: rocket-pulse 2s ease infinite;
-      text-shadow: 0 0 10px rgba(255, 152, 0, 0.5);
-    }
-    
-    @keyframes motto-animation {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    
-    @keyframes rocket-pulse {
-      0%, 100% { transform: translateY(0) scale(1); }
-      50% { transform: translateY(-3px) scale(1.2); }
-    }
     
     /* 应用容器 */
     #app {
@@ -88,79 +36,7 @@
       flex-direction: column;
     }
     
-    /* 侧边栏顶部标题样式 */
-    .side-menu .top-motto {
-      padding: 15px 10px;
-      margin: 0;
-      font-size: 16px;
-      border-bottom: 1px solid #3c546c;
-      text-align: center;
-      color: #ff9800; /* 使用橙色突出显示 */
-      font-weight: bold;
-      white-space: normal; /* 允许文字换行 */
-      background-color: #243342; /* 略微不同的背景色 */
-      line-height: 1.4;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-      letter-spacing: 1px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) inset;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
     
-    .side-menu .top-motto i {
-      font-size: 24px;
-      margin-bottom: 8px;
-      color: #ffb74d;
-    }
-    
-    /* 为标题添加动画效果 */
-    @keyframes glowing {
-      0% { color: #ff9800; }
-      50% { color: #ffb74d; }
-      100% { color: #ff9800; }
-    }
-    
-    /* 添加背景光效 */
-    @keyframes shine {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-    
-    /* 图标动画 */
-    @keyframes pulse {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.1); }
-      100% { transform: scale(1); }
-    }
-    
-    .side-menu .top-motto {
-      animation: glowing 3s infinite;
-    }
-    
-    .side-menu .top-motto i {
-      animation: pulse 2s infinite;
-    }
-    
-    .side-menu .top-motto::after {
-      content: "";
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: linear-gradient(
-        to right, 
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.05) 50%,
-        rgba(255, 255, 255, 0) 100%
-      );
-      transform: rotate(30deg);
-      animation: shine 6s infinite;
-    }
     
     .side-menu h2 {
       padding: 15px 10px;
@@ -555,22 +431,6 @@
       margin-top: 10px;
     }
     
-    .qr-container {
-      display: flex;
-      justify-content: center;
-      margin: 15px 0;
-      background-color: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    
-    .qr-container img {
-      width: 350px;
-      height: 350px;
-      object-fit: contain;
-      image-rendering: crisp-edges;
-    }
     
     .auth-toggle {
       margin-bottom: 15px;
@@ -855,15 +715,6 @@
       border-radius: 0 4px 4px 0;
     }
     
-    .qr-container {
-      margin-top: 1rem;
-      text-align: center;
-    }
-    
-    .qr-container img {
-      max-width: 300px;
-      max-height: 300px;
-    }
     
     .action-button {
       margin-right: 0.5rem;
@@ -876,7 +727,7 @@
       border-radius: 4px;
     }
     
-    /* 配置文件和二维码显示样式 */
+    /* 配置文件显示样式 */
     .config-qr-container {
       margin-top: 1rem;
       border: 1px solid #ddd;
@@ -888,20 +739,34 @@
     .config-controls {
       display: flex;
       align-items: center;
-      margin-bottom: 0.5rem;
-      gap: 0.5rem;
+      margin-bottom: 1rem;
+      gap: 1rem;
+      padding: 10px;
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      border: 1px solid #e9ecef;
     }
     
     .config-controls select {
-      padding: 0.3rem;
+      padding: 0.5rem;
       border: 1px solid #ddd;
       border-radius: 4px;
-      margin-right: 0.5rem;
+      background-color: white;
+      min-width: 200px;
     }
     
     .toggle-button {
-      padding: 0.3rem 0.6rem;
-      font-size: 0.8rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .toggle-button:hover {
+      background-color: #5a6268;
     }
     
     .config-qr-display {
@@ -913,13 +778,14 @@
     .config-content {
       flex: 1;
       min-width: 300px;
-      max-height: 300px;
+      max-height: 400px;
       overflow: auto;
       background-color: #f5f5f5;
-      padding: 0.5rem;
+      padding: 1rem;
       border-radius: 4px;
       font-family: monospace;
       white-space: pre-wrap;
+      border: 1px solid #ddd;
     }
     
     .qr-display {
@@ -933,6 +799,17 @@
       max-width: 300px;
       max-height: 300px;
     }
+    
+    .qr-code-container {
+      margin-top: 15px;
+      text-align: center;
+    }
+    
+    .qr-code-image {
+      max-width: 300px;
+      max-height: 300px;
+    }
+    
     
     .progress-container {
       margin: 15px 0;
@@ -974,16 +851,6 @@
       font-family: monospace;
       white-space: pre-wrap;
       word-break: break-all;
-    }
-    .qr-code-container {
-      margin-top: 20px;
-      text-align: center;
-    }
-    .qr-code-image {
-      max-width: 300px;
-      border: 1px solid #ddd;
-      padding: 10px;
-      background-color: white;
     }
     
     .terminal-output::-webkit-scrollbar-thumb:hover {
@@ -1255,15 +1122,8 @@
       display: flex;
       flex-direction: row;
       align-items: center;
-      gap: 5px;
-    }
-    
-    .button-row {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
-      gap: 30px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     
     /* 终端右上角按钮组样式 */
@@ -1453,15 +1313,6 @@
       overflow-y: auto;
     }
     
-    .qr-code-container {
-      margin-top: 15px;
-      text-align: center;
-    }
-    
-    .qr-code-image {
-      max-width: 300px;
-      max-height: 300px;
-    }
     
     .peer-actions {
       margin-top: 15px;
@@ -2048,136 +1899,8 @@
       box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
     }
     
-    /* 顶部导航口号样式 - 使用 !important 确保不被覆盖 */
-    .top-motto-header {
-      text-align: center !important;
-      position: absolute !important;
-      width: 100% !important;
-      left: 0 !important;
-      top: 50% !important;
-      transform: translateY(-50%) !important;
-      font-size: 20px !important;
-      font-weight: bold !important;
-      z-index: 99 !important; /* 提高z-index保证显示在最上层 */
-      white-space: nowrap !important;
-      letter-spacing: 1px !important;
-      pointer-events: none !important; /* 避免阻挡其他元素点击 */
-    }
     
-    .top-motto-header span {
-      position: relative !important;
-      display: inline-block !important;
-      padding: 5px 15px !important;
-      border-radius: 20px !important;
-      background: rgba(255, 255, 255, 0.1) !important;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1) !important;
-    }
     
-    .top-motto-header .top-motto-text {
-      position: relative !important;
-      display: inline-block !important;
-      color: transparent !important;
-      background-image: linear-gradient(90deg, 
-        #ff9800, #f44336, #e91e63, #9c27b0, #673ab7, 
-        #3f51b5, #2196f3, #03a9f4, #00bcd4, #009688, 
-        #4CAF50, #8BC34A, #CDDC39, #FFEB3B, #FFC107) !important;
-      background-size: 400% 100% !important;
-      -webkit-background-clip: text !important;
-      background-clip: text !important;
-      animation: rainbow-animation 6s linear infinite !important;
-      display: inline-block !important;
-    }
-    
-    /* 为每个字添加动画效果，使用固定类名 */
-    .motto-char {
-      display: inline-block !important;
-      animation: jump-animation 2s ease infinite !important;
-      text-shadow: 0 0 5px rgba(255, 255, 255, 0.2) !important;
-      filter: drop-shadow(0 0 1px rgba(255, 152, 0, 0.5)) !important;
-    }
-    
-    /* 按顺序设置动画延迟 */
-    .motto-char:nth-child(1) { animation-delay: 0.05s !important; }
-    .motto-char:nth-child(2) { animation-delay: 0.10s !important; }
-    .motto-char:nth-child(3) { animation-delay: 0.15s !important; }
-    .motto-char:nth-child(4) { animation-delay: 0.20s !important; }
-    .motto-char:nth-child(5) { animation-delay: 0.25s !important; }
-    .motto-char:nth-child(6) { animation-delay: 0.30s !important; }
-    .motto-char:nth-child(7) { animation-delay: 0.35s !important; }
-    .motto-char:nth-child(8) { animation-delay: 0.40s !important; }
-    .motto-char:nth-child(9) { animation-delay: 0.45s !important; }
-    .motto-char:nth-child(10) { animation-delay: 0.50s !important; }
-    .motto-char:nth-child(11) { animation-delay: 0.55s !important; }
-    .motto-char:nth-child(12) { animation-delay: 0.60s !important; }
-    .motto-char:nth-child(13) { animation-delay: 0.65s !important; }
-    .motto-char:nth-child(14) { animation-delay: 0.70s !important; }
-    .motto-char:nth-child(15) { animation-delay: 0.75s !important; }
-    .motto-char:nth-child(16) { animation-delay: 0.80s !important; }
-    .motto-char:nth-child(17) { animation-delay: 0.85s !important; }
-    .motto-char:nth-child(18) { animation-delay: 0.90s !important; }
-    .motto-char:nth-child(19) { animation-delay: 0.95s !important; }
-    .motto-char:nth-child(20) { animation-delay: 1.00s !important; }
-    .motto-char:nth-child(21) { animation-delay: 1.05s !important; }
-    .motto-char:nth-child(22) { animation-delay: 1.10s !important; }
-    .motto-char:nth-child(23) { animation-delay: 1.15s !important; }
-    
-    .top-motto-header i {
-      display: inline-block !important;
-      margin-right: 10px !important;
-      color: #ff9800 !important;
-      text-shadow: 0 0 10px rgba(255, 152, 0, 0.7) !important;
-      animation: rocket-animation 2s ease infinite !important;
-      vertical-align: middle !important;
-      font-size: 24px !important;
-    }
-    
-    @keyframes rainbow-animation {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    
-    @keyframes jump-animation {
-      0%, 40%, 100% { transform: translateY(0); }
-      20% { transform: translateY(-5px) scale(1.1); }
-    }
-    
-    @keyframes rocket-animation {
-      0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
-      50% { transform: translateY(-3px) scale(1.2) rotate(5deg); }
-    }
-    
-    /* 确保标题和按钮不被口号覆盖 */
-    .app-title, .header > div:last-child {
-      position: relative !important;
-      z-index: 90 !important;
-    }
-    
-    /* 调整header容器让口号能够居中 */
-    .header {
-      position: relative !important;
-      min-height: 65px !important; /* 给口号留足空间 */
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-    }
-    
-    /* 为口号添加点击小彩蛋效果 */
-    .top-motto-header span:active .motto-char, 
-    .top-motto-header span:hover .motto-char {
-      animation-duration: 0.5s !important;
-      cursor: pointer !important;
-    }
-    
-    /* 调整左右两侧内容，给口号留出足够空间 */
-    .app-title {
-      max-width: 30% !important;
-    }
-    
-    .header > div:last-child {
-      max-width: 30% !important;
-      text-align: right !important;
-    }
     
     .menu-grid .tab.active {
       border: 1px solid #45a049;
@@ -2205,12 +1928,6 @@
   </style>
 </head>
 <body>
-  <!-- 固定的标题元素，位于所有内容之上 -->
-  <div id="fixed-motto">
-    <div class="motto-container">
-      <span class="motto-text"><i class="fas fa-rocket"></i>与梦想同行，用热爱点燃未来！坚持不懈，成功终将属于你！</span>
-    </div>
-  </div>
   
   <div id="app">
     <div v-if="!loading" class="side-menu">
@@ -2257,7 +1974,7 @@
             <div class="server-actions">
               <button @click="connectServer(server)">连接</button>
               <button @click="testServerConnection(server.id)" :disabled="isTestingConnection">测试连接</button>
-              <button @click="deployWireguardFromList(server)" class="action-button">部署Wireguard</button>
+              <button @click="deployWireguardFromList(server)" class="action-button">重新部署Wireguard</button>
               <button class="danger" @click="deleteServer(server.id)">删除</button>
             </div>
           </div>
@@ -2293,12 +2010,6 @@
                 </h5>
                 <pre class="config-content">{{ configContent }}</pre>
                 
-                <div v-if="qrCodeImage" class="qr-code-container">
-                  <h4>二维码 (扫描添加到WireGuard客户端)</h4>
-                  <img :src="qrCodeImage" alt="WireGuard配置二维码" class="qr-code-image" />
-                  <p>当前显示: {{ currentConfigIndex >= 0 && clientConfigs[currentConfigIndex] ? 
-                    (clientConfigs[currentConfigIndex].name || `配置 ${currentConfigIndex+1}`) : '未知配置' }}</p>
-                </div>
                 
                 <div class="config-navigation" v-if="clientConfigs.length > 1">
                   <button @click="showConfigFile(currentConfigIndex - 1)" 
@@ -2850,9 +2561,7 @@
           <div class="modal-header">
             <h2 v-if="currentConnectedServer">SSH终端: {{ currentConnectedServer.name }}</h2>
             <div class="button-row">
-              <button @click="executeWireguardInTerminal" class="action-button">一键部署Wireguard</button>
               <button @click="findWireguardConfig" class="action-button" title="自动查找并显示Wireguard配置文件">查找配置</button>
-              <button @click="generateQRFromTerminal" class="action-button" title="从终端输出中识别Wireguard配置并生成二维码">生成二维码</button>
               <button v-if="showFileEditButton" @click="editFile(currentEditingFile)" class="action-button">查看/编辑</button>
               <button @click="closeSSHTerminal">关闭</button>
             </div>
@@ -2885,8 +2594,8 @@
             </div>
           </div>
           
-          <div v-if="foundConfigFiles.length > 0 && !showConfigContent" class="config-button-container" style="margin-top: 10px; text-align: right;">
-            <button @click="showConfigContent = true">显示配置和二维码</button>
+          <div v-if="foundConfigFiles.length > 0 && !showConfigContent" class="config-button-container" style="margin-top: 15px; text-align: center; padding: 15px; background-color: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;">
+            <button @click="showConfigContent = true" class="action-button" style="padding: 10px 20px; font-size: 14px;">显示配置和二维码</button>
           </div>
           
           <div class="terminal-input">
@@ -3027,26 +2736,6 @@
   <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.js"></script>
   <script src="renderer.js"></script>
   <script>
-    // 为固定标题添加额外的动画效果
-    document.addEventListener('DOMContentLoaded', function() {
-      const fixedMotto = document.getElementById('fixed-motto');
-      if (fixedMotto) {
-        // 添加鼠标悬停效果
-        fixedMotto.addEventListener('mouseenter', function() {
-          const text = fixedMotto.querySelector('.motto-text');
-          if (text) {
-            text.style.animationDuration = '2s';
-          }
-        });
-        
-        fixedMotto.addEventListener('mouseleave', function() {
-          const text = fixedMotto.querySelector('.motto-text');
-          if (text) {
-            text.style.animationDuration = '6s';
-          }
-        });
-      }
-    });
   </script>
 </body>
 </html> 

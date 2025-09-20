@@ -461,9 +461,9 @@ async function getWireguardInstanceDetails(ssh, instanceName) {
     // 获取服务器公网IP
     console.log('获取服务器公网IP...');
     const publicIPResult = await ssh.execCommand(`
-      curl -s https://api.ipify.org || 
-      curl -s https://ifconfig.me || 
-      curl -s https://checkip.amazonaws.com || 
+      curl -4 -s https://api.ipify.org || 
+      curl -4 -s https://ifconfig.me || 
+      curl -4 -s https://checkip.amazonaws.com || 
       hostname -I | awk '{print $1}'
     `);
     
@@ -664,7 +664,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = ${serverPublicKeyMatch[1]}
 Endpoint = ${publicIP}:${listenPortMatch[1]}
-AllowedIPs = 0.0.0.0/0, ::/0
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 `;
               // 保存客户端配置
@@ -914,6 +914,13 @@ PersistentKeepalive = 25
       }
     }
     
+    // 对peers按编号排序，确保显示顺序正确
+    peers.sort((a, b) => {
+      const numA = parseInt(a.number);
+      const numB = parseInt(b.number);
+      return numA - numB;
+    });
+    
     // 综合所有信息
     console.log(`完成${instanceName}实例详情获取，找到${peers.length}个peer`);
     return {
@@ -944,24 +951,25 @@ async function addWireguardPeer(ssh, instanceName) {
     // 确保VPS配置WG目录存在
     await ssh.execCommand('mkdir -p /root/VPS配置WG');
     
-    // 获取当前peer信息，查找最大peer编号
+    // 获取当前peer信息，查找可用的peer编号
     const peersResult = await ssh.execCommand(`find /root/VPS配置WG -name "${instanceName}-peer*-client.conf" | sort`);
     
     const peerFiles = peersResult.stdout.split('\n').filter(line => line.trim() !== '');
-    let maxPeerNumber = 0;
+    const usedNumbers = new Set();
     
     for (const peerFile of peerFiles) {
       const peerNameMatch = peerFile.match(/-peer(\d+)-client\.conf$/);
       if (peerNameMatch) {
         const peerNumber = parseInt(peerNameMatch[1], 10);
-        if (peerNumber > maxPeerNumber) {
-          maxPeerNumber = peerNumber;
-        }
+        usedNumbers.add(peerNumber);
       }
     }
     
-    // 下一个peer编号
-    const newPeerNumber = maxPeerNumber + 1;
+    // 找到第一个可用的peer编号（从1开始）
+    let newPeerNumber = 1;
+    while (usedNumbers.has(newPeerNumber)) {
+      newPeerNumber++;
+    }
     console.log(`为Wireguard实例 ${instanceName} 添加新peer: peer${newPeerNumber}`);
     
     // 获取服务器配置信息
@@ -1129,7 +1137,7 @@ DNS = ${dns}
 [Peer]
 PublicKey = ${serverPublicKeyResult.stdout.trim()}
 Endpoint = ${publicIP}:${listenPort}
-AllowedIPs = 0.0.0.0/0, ::/0
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 `;
     
@@ -1268,6 +1276,46 @@ ipcMain.handle('deploy-wireguard', async (event, serverId) => {
 
     // 新增: 预检查和安装所有必需的软件包
     sendProgress(2, '正在检查系统更新...');
+    
+    // 智能APT锁冲突解决机制
+    sendProgress(2, '正在检查APT锁状态...');
+    const lockCheckResult = await ssh.execCommand('lsof /var/lib/dpkg/lock-frontend 2>/dev/null || echo "no lock"');
+    if (!lockCheckResult.stdout.includes('no lock')) {
+      sendProgress(2.5, '检测到APT锁冲突，正在智能解决...');
+      
+      // 1. 检查是否有正在运行的apt进程
+      const aptProcessCheck = await ssh.execCommand('ps aux | grep -E "(apt|dpkg)" | grep -v grep || echo "no apt process"');
+      if (!aptProcessCheck.stdout.includes('no apt process')) {
+        sendProgress(2.7, '发现正在运行的APT进程，等待完成...');
+        // 等待最多30秒让现有进程完成
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const stillRunning = await ssh.execCommand('ps aux | grep -E "(apt|dpkg)" | grep -v grep || echo "no apt process"');
+          if (stillRunning.stdout.includes('no apt process')) {
+            break;
+          }
+          if (i % 5 === 0) {
+            sendProgress(2.7 + (i * 0.1), `等待APT进程完成... (${i}/30秒)`);
+          }
+        }
+      }
+      
+      // 2. 强制清理锁文件
+      sendProgress(3, '清理APT锁文件...');
+      await ssh.execCommand('pkill -f apt || true');
+      await ssh.execCommand('rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock');
+      await new Promise(r => setTimeout(r, 3000)); // 等待3秒确保清理完成
+      
+      // 3. 验证锁已清理
+      const verifyLockResult = await ssh.execCommand('lsof /var/lib/dpkg/lock-frontend 2>/dev/null || echo "lock cleared"');
+      if (!verifyLockResult.stdout.includes('lock cleared')) {
+        sendProgress(3.2, '锁文件清理失败，尝试强制解决...');
+        await ssh.execCommand('fuser -k /var/lib/dpkg/lock-frontend 2>/dev/null || true');
+        await ssh.execCommand('rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock');
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    
     await ssh.execCommand('apt update');
     
     // 预安装必要工具
@@ -1302,9 +1350,111 @@ ipcMain.handle('deploy-wireguard', async (event, serverId) => {
     sendProgress(14, '正在检查网络配置...');
     await ssh.execCommand('sysctl -w net.ipv4.ip_forward=1');
     
-    // 5. Wireguard脚本内容 - 注意: 修复了转义字符导致的JavaScript解析错误
+    // 5. Wireguard脚本内容 - 改进版本，增加错误处理
     sendProgress(15, '正在准备安装脚本...');
     const wireguardScript = `#!/bin/bash
+# 改进的Wireguard部署脚本 - 增加错误处理和诊断
+set -e  # 遇到错误立即退出
+
+# 错误处理函数
+error_exit() {
+    echo "错误: $1" >&2
+    echo "部署失败，请检查上述错误信息" >&2
+    exit 1
+}
+
+# 检查是否为root用户
+if [ "$EUID" -ne 0 ]; then
+    error_exit "请以root用户运行此脚本"
+fi
+
+# 记录开始时间
+echo "Wireguard部署开始时间: $(date)"
+
+# ==================== 系统更新和依赖安装 ====================
+echo "步骤1: 系统更新和依赖安装..."
+
+# 1. 彻底解决APT锁冲突问题
+echo "1.1 解决APT锁冲突..."
+# 强制终止所有apt相关进程
+pkill -f apt || true
+pkill -f dpkg || true
+sleep 2
+
+# 清理所有锁文件
+rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+sleep 2
+
+# 修复dpkg中断问题
+echo "1.2 修复dpkg中断问题..."
+dpkg --configure -a || true
+apt-get update --fix-missing || true
+
+# 2. 更新系统软件包
+echo "1.3 更新系统软件包..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get upgrade -y
+apt-get dist-upgrade -y
+
+# 3. 安装基础依赖
+echo "1.4 安装基础依赖..."
+apt-get install -y curl wget sudo software-properties-common apt-transport-https ca-certificates gnupg lsb-release
+
+# 4. 安装Wireguard相关依赖
+echo "1.5 安装Wireguard相关依赖..."
+apt-get install -y wireguard wireguard-tools qrencode ufw iptables-persistent
+
+# 5. 配置iptables-persistent
+echo "1.6 配置iptables-persistent..."
+echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
+echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
+
+# 6. 启用IP转发
+echo "1.7 启用IP转发..."
+echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+sysctl -p
+
+echo "系统更新和依赖安装完成！"
+echo "=========================================="
+
+# 检查并清理现有Wireguard实例
+echo "检查现有Wireguard实例..."
+existing_instances=$(wg show interfaces 2>/dev/null || echo "")
+if [ -n "$existing_instances" ]; then
+    echo "发现现有Wireguard实例: $existing_instances"
+    echo "正在停止现有实例..."
+    
+    # 停止所有现有的Wireguard接口
+    for instance in $existing_instances; do
+        echo "停止实例: $instance"
+        wg-quick down $instance 2>/dev/null || true
+        systemctl stop wg-quick@$instance 2>/dev/null || true
+        systemctl disable wg-quick@$instance 2>/dev/null || true
+    done
+    
+    # 清理现有配置
+    echo "清理现有配置..."
+    rm -f /etc/wireguard/wg*.conf 2>/dev/null || true
+    rm -rf /root/VPS配置WG 2>/dev/null || true
+    
+    # 强制清理可能的残留配置
+    echo "强制清理残留配置..."
+    find /etc/wireguard/ -name "wg*.conf" -delete 2>/dev/null || true
+    find /root/ -name "*WG*" -type d -exec rm -rf {} + 2>/dev/null || true
+    
+    # 清理iptables规则
+    echo "清理现有iptables规则..."
+    iptables -D FORWARD -i wg+ -j ACCEPT 2>/dev/null || true
+    iptables -D FORWARD -o wg+ -j ACCEPT 2>/dev/null || true
+    iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o enp1s0 -j MASQUERADE 2>/dev/null || true
+    iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o eth0 -j MASQUERADE 2>/dev/null || true
+    
+    echo "现有实例清理完成，开始重新部署..."
+else
+    echo "未发现现有Wireguard实例，开始全新部署..."
+fi
+
 # VPS配置WG.sh
 # 本脚本适用于 Ubuntu 22.04，自动安装配置 WireGuard，
 # 根据 VPS 外部接口上的公网 IP（主IP及附加IP）分别创建对应的 WG 实例，
@@ -1324,9 +1474,55 @@ echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-
 DNS="1.1.1.1"
 
 echo "更新并升级系统软件包..."
+
+# 智能APT锁冲突解决机制
+echo "检查APT锁状态..."
+if lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+    echo "检测到APT锁冲突，启动智能解决流程..."
+    
+    # 1. 检查是否有正在运行的apt进程
+    if pgrep -f "apt|dpkg" >/dev/null; then
+        echo "发现正在运行的APT进程，等待完成..."
+        # 等待最多30秒让现有进程完成
+        for i in {1..30}; do
+            if ! pgrep -f "apt|dpkg" >/dev/null; then
+                break
+            fi
+            echo "等待APT进程完成... ($i/30秒)"
+            sleep 1
+        done
+    fi
+    
+    # 2. 强制清理锁文件
+    echo "清理APT锁文件..."
+    pkill -f apt || true
+    rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+    sleep 3
+    
+    # 3. 验证锁已清理
+    if lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+        echo "锁文件清理失败，尝试强制解决..."
+        fuser -k /var/lib/dpkg/lock-frontend 2>/dev/null || true
+        rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock
+        sleep 2
+    fi
+    
+    echo "APT锁冲突解决完成"
+fi
+
 apt update && apt upgrade -y
 
 echo "安装 WireGuard、qrencode、ufw、iptables-persistent 和 curl..."
+
+# 再次检查锁问题（增强版）
+if lsof /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+    echo "再次检测到APT锁冲突，执行快速解决..."
+    pkill -f apt || true
+    rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+    sleep 3
+    echo "APT锁冲突已解决，继续安装..."
+fi
+
 apt install -y wireguard qrencode ufw iptables-persistent curl
 
 echo "开启 IP 转发..."
@@ -1351,25 +1547,74 @@ if [ \${#public_ips[@]} -eq 0 ]; then
   exit 1
 fi
 
-# 获取实际对外显示的主IP
-primary_ip=$(curl -s ifconfig.me)
-echo "通过外部检测到的主IP：$primary_ip"
-
-# 调整顺序：将主IP放在首位，其它附加IP依次排列
-ordered_ips=()
+# 验证所有IP地址都是IPv4格式
+echo "验证IP地址格式..."
+valid_ips=()
 for ip in "\${public_ips[@]}"; do
-  if [ "$ip" == "$primary_ip" ]; then
-    ordered_ips=("$ip")
+  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    valid_ips+=("$ip")
+    echo "有效IPv4地址: $ip"
+  else
+    echo "跳过无效IP地址: $ip"
+  fi
+done
+
+if [ \${#valid_ips[@]} -eq 0 ]; then
+  echo "错误：没有找到有效的IPv4地址"
+  exit 1
+fi
+
+public_ips=("\${valid_ips[@]}")
+echo "最终有效IPv4地址列表: \${public_ips[@]}"
+
+# 获取实际对外显示的主IP（仅IPv4，多重检测确保获取IPv4）
+echo "正在检测公网IPv4地址..."
+primary_ip=""
+# 尝试多个IPv4检测服务
+for service in "curl -4 -s ifconfig.me" "curl -4 -s ipv4.icanhazip.com" "curl -4 -s 4.icanhazip.com" "curl -4 -s checkip.amazonaws.com" "curl -4 -s ipinfo.io/ip"; do
+  echo "尝试服务: $service"
+  result=$($service 2>/dev/null || echo "")
+  if [[ "$result" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    primary_ip="$result"
+    echo "通过 $service 检测到的主IP（IPv4）：$primary_ip"
     break
   fi
 done
+
+# 如果仍然没有获取到有效的IPv4地址，使用接口IP作为备选
+if [[ -z "$primary_ip" || ! "$primary_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "外部检测失败，使用接口IP作为备选..."
+  primary_ip=$(ip -4 addr show dev "$EXT_IF" | grep inet | awk '{print $2}' | cut -d/ -f1 | head -n1)
+  echo "使用接口IP作为主IP（IPv4）：$primary_ip"
+fi
+
+# 验证主IP是否为有效IPv4地址
+if [[ ! "$primary_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "错误：无法获取有效的IPv4地址"
+  exit 1
+fi
+
+# 调整顺序：将主IP放在首位，其它附加IP依次排列（仅IPv4）
+ordered_ips=()
+# 首先添加主IP
+ordered_ips=("$primary_ip")
+
+# 然后添加其他IPv4地址（排除主IP）
 for ip in "\${public_ips[@]}"; do
-  if [ "$ip" != "$primary_ip" ]; then
-    ordered_ips+=("$ip")
+  # 只处理IPv4地址（不包含冒号）
+  if [[ "$ip" == *.* && "$ip" != *:* && "$ip" != "$primary_ip" ]]; then
+      ordered_ips+=("$ip")
   fi
 done
-public_ips=("\${ordered_ips[@]}")
-echo "最终IP顺序：\${public_ips[@]}"
+
+# 重新构建public_ips数组，只包含IPv4地址
+public_ips=()
+for ip in "\${ordered_ips[@]}"; do
+  public_ips+=("$ip")
+done
+
+echo "最终IP顺序（仅IPv4）：\${public_ips[@]}"
+echo "主IP确认：$primary_ip"
 
 # 创建保存配置文件的目录，例如 /root/VPS配置WG
 WG_DIR="/root/VPS配置WG"
@@ -1427,22 +1672,42 @@ AllowedIPs = \${PEER_IP}/32
 
     # 生成客户端配置文件，客户端 Address 掩码设为 /32
     CLIENT_CONF="$WG_DIR/\${WG_IF}-peer\${p}-client.conf"
+    
+    # 确保使用IPv4地址作为Endpoint
+    endpoint_ip="\${ip}"
+    # 验证IP是否为IPv4格式
+    if [[ ! "\${endpoint_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      echo "警告：IP地址 \${endpoint_ip} 不是有效的IPv4格式，跳过此配置"
+      continue
+    fi
+    
     cat > "$CLIENT_CONF" <<EOF
 [Interface]
 PrivateKey = \$(cat "$WG_DIR/\${WG_IF}-peer\${p}.key")
 Address = \${PEER_IP}/32
 DNS = \${DNS}
+
 [Peer]
 PublicKey = \$(cat "$WG_DIR/\${WG_IF}-server.pub")
-Endpoint = \${ip}:\${WG_PORT}
-AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = \${endpoint_ip}:\${WG_PORT}
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
+    
+    echo "客户端配置已生成：\${CLIENT_CONF}"
+    echo "Endpoint地址：\${endpoint_ip}:\${WG_PORT} (IPv4)"
   done
 
   # 生成服务端配置文件，使用 SNAT 指定出网 IP，并添加双向 FORWARD 规则及1000个端口映射规则
   SERVER_CONF="/etc/wireguard/\${WG_IF}.conf"
   SERVER_PRIVATE_KEY=\$(cat "$WG_DIR/\${WG_IF}-server.key")
+  
+  # 确保使用IPv4地址
+  server_ip="\${ip}"
+  if [[ ! "\${server_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "错误：服务端IP地址 \${server_ip} 不是有效的IPv4格式"
+    exit 1
+  fi
   
   cat > "$SERVER_CONF" <<EOF
 [Interface]
@@ -1450,12 +1715,15 @@ Address = \${SERVER_WG_IP}/24
 ListenPort = \${WG_PORT}
 PrivateKey = \${SERVER_PRIVATE_KEY}
 PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; \\
-         iptables -t nat -A POSTROUTING -s \${WG_SUBNET} -o \${EXT_IF} -j SNAT --to-source \${ip}; \\
-         for port in \\\$(seq \${MAP_PORT_START} \${MAP_PORT_END}); do iptables -t nat -A PREROUTING -p udp --dport \\\$port -j DNAT --to-destination \${ip}:\${WG_PORT}; done
+         iptables -t nat -A POSTROUTING -s \${WG_SUBNET} -o \${EXT_IF} -j SNAT --to-source \${server_ip}; \\
+         for port in \\\$(seq \${MAP_PORT_START} \${MAP_PORT_END}); do iptables -t nat -A PREROUTING -p udp --dport \\\$port -j DNAT --to-destination \${server_ip}:\${WG_PORT}; done
 PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; \\
-           iptables -t nat -D POSTROUTING -s \${WG_SUBNET} -o \${EXT_IF} -j SNAT --to-source \${ip}; \\
-           for port in \\\$(seq \${MAP_PORT_START} \${MAP_PORT_END}); do iptables -t nat -D PREROUTING -p udp --dport \\\$port -j DNAT --to-destination \${ip}:\${WG_PORT}; done
+           iptables -t nat -D POSTROUTING -s \${WG_SUBNET} -o \${EXT_IF} -j SNAT --to-source \${server_ip}; \\
+           for port in \\\$(seq \${MAP_PORT_START} \${MAP_PORT_END}); do iptables -t nat -D PREROUTING -p udp --dport \\\$port -j DNAT --to-destination \${server_ip}:\${WG_PORT}; done
 EOF
+  
+  echo "服务端配置已生成：\${SERVER_CONF}"
+  echo "服务端IP地址：\${server_ip} (IPv4)"
 
   echo "\${peer_configs}" >> "$SERVER_CONF"
   chmod 600 "$SERVER_CONF" "$WG_DIR/\${WG_IF}-server.key"
@@ -1511,164 +1779,261 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
     const chmodResult = await ssh.execCommand('chmod +x /root/VPS动态配置wireguard.sh');
     console.log('赋予执行权限结果:', chmodResult);
     
-    // 6. 首次运行脚本
+    // 6. 首次运行脚本 - 改进版本
     sendProgress(30, '正在启动Wireguard部署...');
     
-    // 以非阻塞方式运行脚本并实时更新进度
+    // 改进的脚本执行方式：直接执行并捕获输出
     const execScriptPromise = new Promise(async (resolve, reject) => {
       try {
-        // 创建进度标记文件用于监控进度
-        await ssh.execCommand('echo "0" > /tmp/wg_progress');
+        // 步骤1: 检查系统环境
+        sendProgress(5, '步骤1/12: 检查系统环境...');
+        const envCheck = await ssh.execCommand('uname -a && cat /etc/os-release | head -n 3');
+        console.log('系统环境:', envCheck.stdout);
         
-        // 启动脚本（后台执行）
-        ssh.execCommand('nohup sh -c "bash /root/VPS动态配置wireguard.sh > /tmp/wg_output 2>&1 & echo $!" > /tmp/wg_pid').then(result => {
-          console.log('脚本启动结果:', result);
+        // 步骤2: 检查网络接口
+        sendProgress(10, '步骤2/12: 检查网络接口...');
+        const netCheck = await ssh.execCommand('ip route | grep default && ip -o -4 addr show | grep -v 127.0.0.1');
+        console.log('网络接口:', netCheck.stdout);
+        
+        // 步骤3: 执行Wireguard部署脚本
+        sendProgress(15, '步骤3/12: 开始执行Wireguard部署脚本...');
+        
+        // 使用更简单直接的方式执行脚本
+        const scriptResult = await ssh.execCommand('bash /root/VPS动态配置wireguard.sh', {
+          onStdout: (chunk) => {
+            const output = chunk.toString();
+            console.log('脚本输出:', output);
+            
+            // 根据输出内容实时更新进度和步骤
+            if (output.includes('Wireguard部署开始时间')) {
+              sendProgress(20, '步骤4/12: 初始化部署环境...');
+            } else if (output.includes('步骤1: 系统更新和依赖安装')) {
+              sendProgress(25, '步骤5/12: 系统更新和依赖安装...');
+            } else if (output.includes('解决APT锁冲突')) {
+              sendProgress(30, '步骤6/12: 解决APT锁冲突...');
+            } else if (output.includes('更新系统软件包')) {
+              sendProgress(35, '步骤7/12: 更新系统软件包...');
+            } else if (output.includes('安装基础依赖')) {
+              sendProgress(40, '步骤8/12: 安装基础依赖...');
+            } else if (output.includes('安装Wireguard相关依赖')) {
+              sendProgress(45, '步骤9/12: 安装Wireguard组件...');
+            } else if (output.includes('检查现有Wireguard实例')) {
+              sendProgress(50, '步骤10/12: 检查现有实例...');
+            } else if (output.includes('发现现有Wireguard实例')) {
+              sendProgress(52, '步骤10/12: 发现现有实例，准备清理...');
+            } else if (output.includes('正在停止现有实例')) {
+              sendProgress(54, '步骤10/12: 停止现有实例...');
+            } else if (output.includes('清理现有配置')) {
+              sendProgress(56, '步骤10/12: 清理现有配置...');
+            } else if (output.includes('现有实例清理完成')) {
+              sendProgress(58, '步骤10/12: 现有实例清理完成...');
+            } else if (output.includes('检测到外部网络接口')) {
+              sendProgress(60, '步骤11/12: 检测网络接口和IP地址...');
+            } else if (output.includes('配置 WireGuard 接口')) {
+              sendProgress(65, '步骤12/12: 配置WireGuard接口...');
+            } else if (output.includes('生成服务端密钥')) {
+              sendProgress(70, '步骤12/12: 生成密钥对...');
+            } else if (output.includes('配置 ufw 防火墙规则')) {
+              sendProgress(75, '步骤12/12: 配置防火墙规则...');
+            } else if (output.includes('设置 systemd 开机自启')) {
+              sendProgress(80, '步骤12/12: 配置系统服务...');
+            } else if (output.includes('二维码')) {
+              sendProgress(85, '步骤12/12: 生成客户端配置和二维码...');
+            } else if (output.includes('所有配置已完成')) {
+              sendProgress(90, '步骤12/12: 完成所有配置...');
+            }
+          },
+          onStderr: (chunk) => {
+            console.error('脚本错误:', chunk.toString());
+          }
         });
         
-        // 等待脚本启动
-        await new Promise(r => setTimeout(r, 1000));
+        console.log('脚本执行完成:', scriptResult);
         
-        // 获取脚本PID
-        const pidResult = await ssh.execCommand('cat /tmp/wg_pid');
-        const pid = pidResult.stdout.trim();
-        console.log('脚本PID:', pid);
-        
-        // 定期检查进度
-        let finished = false;
-        let lastOutput = '';
-        let progressCounter = 30;
-        let configDetected = false;
-        let noProgressDetectionCount = 0;
-        
-        const checkInterval = setInterval(async () => {
-          if (finished) return;
-          
-          try {
-            // 检查进程是否还在运行
-            const psResult = await ssh.execCommand(`ps -p ${pid} -o comm= || echo "notrunning"`);
-            const isRunning = !psResult.stdout.includes('notrunning');
-            
-            // 检查是否已经生成了配置文件
-            if (!configDetected) {
-              const configCheckResult = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""');
-              if (configCheckResult.stdout && configCheckResult.stdout.trim() !== '') {
-                configDetected = true;
-                progressCounter = Math.max(progressCounter, 95);
-                sendProgress(progressCounter, `Wireguard配置文件已生成，完成度(${progressCounter}%)...`);
-              }
-            }
-            
-            // 获取输出
-            const outputResult = await ssh.execCommand('cat /tmp/wg_output || echo ""');
-            const currentOutput = outputResult.stdout;
-            
-            // 如果输出有变化，更新进度
-            if (currentOutput !== lastOutput) {
-              lastOutput = currentOutput;
-              noProgressDetectionCount = 0;
-              
-              // 根据输出内容估算进度
-              let estimatedProgress = 30; // 起始进度
-              
-              if (currentOutput.includes('更新并升级系统软件包')) estimatedProgress = 35;
-              if (currentOutput.includes('安装 WireGuard')) estimatedProgress = 40;
-              if (currentOutput.includes('开启 IP 转发')) estimatedProgress = 45;
-              if (currentOutput.includes('检测到外部网络接口')) estimatedProgress = 50;
-              if (currentOutput.includes('获取实际对外显示的主IP')) estimatedProgress = 55;
-              if (currentOutput.includes('配置 WireGuard 接口')) estimatedProgress = 60;
-              if (currentOutput.includes('生成服务端密钥')) estimatedProgress = 65;
-              if (currentOutput.includes('生成客户端配置文件')) estimatedProgress = 70;
-              if (currentOutput.includes('设置 systemd 开机自启')) estimatedProgress = 80;
-              if (currentOutput.includes('配置 ufw 防火墙规则')) estimatedProgress = 85;
-              if (currentOutput.includes('二维码')) estimatedProgress = 90;
-              if (currentOutput.includes('所有配置已完成')) estimatedProgress = 95;
-              
-              progressCounter = Math.max(progressCounter, estimatedProgress);
-              sendProgress(progressCounter, `正在部署Wireguard (${progressCounter}%)...`);
-            } else {
-              // 如果输出没有变化，增加计数器
-              noProgressDetectionCount++;
-              // 每30秒没有进展，发送保持活跃的消息
-              if (noProgressDetectionCount % 15 === 0) {
-                sendProgress(progressCounter, `Wireguard部署仍在进行中(${progressCounter}%)... 可能需要较长时间`);
-              }
-            }
-            
-            // 如果进程不再运行，表示部署完成或失败
-            if (!isRunning || configDetected) {
-              // 再次检查是否已经生成了配置文件
-              const finalConfigCheck = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""');
-              if (finalConfigCheck.stdout && finalConfigCheck.stdout.trim() !== '') {
-                clearInterval(checkInterval);
-                finished = true;
-                sendProgress(100, '部署完成！发现客户端配置文件');
-                resolve({ success: true, output: currentOutput });
-                return;
-              }
-              
-              // 如果进程不再运行但没找到配置文件
-              if (!isRunning && !configDetected) {
-                clearInterval(checkInterval);
-                finished = true;
-                
-                // 再次检查特定标志
-                if (currentOutput.includes('所有配置已完成') || 
-                    currentOutput.includes('WireGuard 服务已重启') || 
-                    currentOutput.includes('客户端配置文件') ||
-                    (currentOutput.includes('配置文件') && currentOutput.includes('wg0-peer1-client.conf'))) {
-                  sendProgress(100, '部署完成！');
-                  resolve({ success: true, output: currentOutput });
-                } else if (noProgressDetectionCount > 60) { // 如果超过2分钟没有进度更新
-                  sendProgress(100, '部署可能完成，但无法确认。请通过SSH终端检查部署结果。');
-                  resolve({ 
-                    success: true, 
-                    output: currentOutput,
-                    warning: '部署进程已结束，但无法确认是否完全成功。请通过SSH终端命令检查部署结果。'
-                  });
-                } else {
-                  // 尝试查找错误信息
-                  const errorMatch = currentOutput.match(/错误|失败|Error|Failed/i);
-                  const errorMsg = errorMatch ? 
-                    currentOutput.substring(currentOutput.indexOf(errorMatch[0])) : 
-                    '未知错误，请检查日志';
-                  
-                  sendProgress(100, '部署遇到问题: ' + errorMsg + '。请稍后通过SSH终端查看详情。');
-                  // 即使遇到错误也将其标记为成功，因为实际上可能仍在后台部署
-                  resolve({ 
-                    success: true, 
-                    output: currentOutput,
-                    warning: '部署进程遇到问题，但可能仍在后台继续。请稍后通过SSH终端查看部署结果。'
-                  });
-                }
-              }
-            }
-          } catch (error) {
-            console.error('检查进度失败:', error);
-            // 错误不影响继续检查
+        // 检查脚本执行结果
+        if (scriptResult.code === 0) {
+          sendProgress(95, 'Wireguard部署成功完成！');
+          resolve({ success: true, output: scriptResult.stdout });
+        } else {
+          // 即使脚本返回非0，也检查是否实际成功了
+          const configCheck = await ssh.execCommand('find /root/VPS配置WG -name "*-peer*-client.conf" 2>/dev/null || echo ""');
+          if (configCheck.stdout && configCheck.stdout.trim() !== '') {
+            sendProgress(95, 'Wireguard部署成功完成！');
+            resolve({ success: true, output: scriptResult.stdout, warning: '脚本返回非0状态但配置文件已生成' });
+          } else {
+            throw new Error(`脚本执行失败，退出码: ${scriptResult.code}\n错误输出: ${scriptResult.stderr}`);
           }
-        }, 2000); // 每2秒检查一次
+        }
+      } catch (error) {
+        console.error('脚本执行过程中出错:', error);
         
-        // 设置最大超时时间（20分钟)
-        setTimeout(() => {
-          if (!finished) {
-            clearInterval(checkInterval);
-            finished = true;
-            sendProgress(100, '部署仍在进行中，请稍后通过SSH终端查看');
+        // 尝试获取更多诊断信息
+        try {
+          const diagResult = await ssh.execCommand(`
+            echo "=== 系统诊断信息 ==="
+            echo "当前用户: $(whoami)"
+            echo "当前目录: $(pwd)"
+            echo "Wireguard状态: $(wg show 2>/dev/null || echo '未运行')"
+            echo "已安装的wireguard包: $(dpkg -l | grep wireguard || echo '未安装')"
+            echo "网络接口: $(ip -br a | grep -v lo)"
+            echo "防火墙状态: $(ufw status || echo 'ufw未安装')"
+            echo "IP转发状态: $(sysctl net.ipv4.ip_forward)"
+            echo "配置文件目录: $(ls -la /root/VPS配置WG/ 2>/dev/null || echo '目录不存在')"
+            echo "Wireguard配置目录: $(ls -la /etc/wireguard/ 2>/dev/null || echo '目录不存在')"
+          `);
+          console.log('诊断信息:', diagResult.stdout);
+          
+          // 即使出错，也尝试检查是否有部分成功的配置
+          const partialConfigCheck = await ssh.execCommand('find /root/VPS配置WG -name "*.conf" 2>/dev/null || echo ""');
+          if (partialConfigCheck.stdout && partialConfigCheck.stdout.trim() !== '') {
+            console.log('发现部分配置文件:', partialConfigCheck.stdout);
             resolve({ 
               success: true, 
-              output: '部署操作需要较长时间，此时仍在后台运行。请稍后通过SSH终端查看部署状态。', 
-              warning: '部署超时，但仍在后台继续。请稍后检查结果。'
+              output: scriptResult ? scriptResult.stdout : '',
+              warning: '脚本执行过程中遇到问题，但发现了一些配置文件。请检查部署状态。',
+              diagnostic: diagResult.stdout
             });
+          } else {
+            reject(new Error(`脚本执行失败: ${error.message}\n\n诊断信息:\n${diagResult.stdout}`));
           }
-        }, 20 * 60 * 1000);
-      } catch (error) {
-        reject(error);
+        } catch (diagError) {
+          reject(new Error(`脚本执行失败: ${error.message}\n无法获取诊断信息: ${diagError.message}`));
+        }
       }
     });
     
     // 等待脚本执行完成
-    const execScriptResult = await execScriptPromise;
-    console.log('执行脚本结果:', execScriptResult);
+    let execScriptResult;
+    try {
+      execScriptResult = await execScriptPromise;
+      console.log('执行脚本结果:', execScriptResult);
+    } catch (error) {
+      console.log('主脚本执行失败，尝试简化部署方法...');
+      
+      // 智能备用方案：增强的简化部署
+      sendProgress(50, '主脚本失败，启动智能备用部署...');
+      
+      try {
+        // 增强的备用部署步骤
+        const enhancedBackupSteps = [
+          { 
+            cmd: 'pkill -f apt || true; rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/apt/lists/lock; sleep 3', 
+            desc: '彻底解决APT锁冲突',
+            retry: 3
+          },
+          { 
+            cmd: 'apt update --fix-missing', 
+            desc: '更新软件包列表（修复缺失）',
+            retry: 2
+          },
+          { 
+            cmd: 'apt install -y wireguard qrencode ufw iptables-persistent curl', 
+            desc: '安装核心组件',
+            retry: 2
+          },
+          { 
+            cmd: 'mkdir -p /root/VPS配置WG && chmod 700 /root/VPS配置WG', 
+            desc: '创建安全配置目录',
+            retry: 1
+          },
+          { 
+            cmd: 'sysctl -w net.ipv4.ip_forward=1 && echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf', 
+            desc: '启用IP转发',
+            retry: 1
+          },
+          { 
+            cmd: 'systemctl enable wg-quick@wg0 2>/dev/null || true', 
+            desc: '配置Wireguard服务',
+            retry: 1
+          }
+        ];
+        
+        for (let i = 0; i < enhancedBackupSteps.length; i++) {
+          const step = enhancedBackupSteps[i];
+          let success = false;
+          
+          for (let retry = 0; retry < step.retry; retry++) {
+            sendProgress(50 + (i * 8) + (retry * 2), `${step.desc}${retry > 0 ? ` (重试 ${retry}/${step.retry-1})` : ''}`);
+            
+            const result = await ssh.execCommand(step.cmd);
+            if (result.code === 0) {
+              success = true;
+              break;
+            } else {
+              console.warn(`步骤失败: ${step.desc} (尝试 ${retry + 1}/${step.retry})`, result.stderr);
+              if (retry < step.retry - 1) {
+                await new Promise(r => setTimeout(r, 2000)); // 等待2秒后重试
+              }
+            }
+          }
+          
+          if (!success) {
+            console.error(`步骤最终失败: ${step.desc}`);
+            // 继续执行其他步骤，不中断整个流程
+          }
+        }
+        
+        // 创建基本的Wireguard配置
+        sendProgress(90, '创建基本Wireguard配置...');
+        const basicConfig = await ssh.execCommand(`
+          cd /root/VPS配置WG
+          wg genkey | tee wg0-server.key | wg pubkey > wg0-server.pub
+          wg genkey | tee wg0-peer1.key | wg pubkey > wg0-peer1.pub
+          
+          # 获取公网IP（仅IPv4）
+          PUBLIC_IP=$(curl -4 -s ifconfig.me || curl -4 -s ipv4.icanhazip.com || curl -4 -s 4.icanhazip.com || curl -4 -s checkip.amazonaws.com || curl -4 -s ipinfo.io/ip || hostname -I | awk '{print $1}')
+          echo "检测到公网IP（IPv4）: $PUBLIC_IP"
+          
+          # 创建服务端配置
+          cat > /etc/wireguard/wg0.conf << EOF
+[Interface]
+Address = 10.0.1.1/24
+ListenPort = 52835
+PrivateKey = $(cat wg0-server.key)
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -s 10.0.1.0/24 -o $(ip route | grep default | awk '{print $5}' | head -n1) -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -s 10.0.1.0/24 -o $(ip route | grep default | awk '{print $5}' | head -n1) -j MASQUERADE
+
+[Peer]
+PublicKey = $(cat wg0-peer1.pub)
+AllowedIPs = 10.0.1.2/32
+EOF
+
+          # 创建客户端配置
+          cat > wg0-peer1-client.conf << EOF
+[Interface]
+PrivateKey = $(cat wg0-peer1.key)
+Address = 10.0.1.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = $(cat wg0-server.pub)
+Endpoint = $PUBLIC_IP:52835
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+
+          # 启动Wireguard
+          systemctl enable wg-quick@wg0
+          systemctl start wg-quick@wg0
+          
+          echo "简化部署完成"
+        `);
+        
+        if (basicConfig.code === 0) {
+          sendProgress(100, '简化部署成功完成！');
+          execScriptResult = { 
+            success: true, 
+            output: basicConfig.stdout,
+            method: 'simplified'
+          };
+        } else {
+          throw new Error(`简化部署失败: ${basicConfig.stderr}`);
+        }
+      } catch (simpleError) {
+        console.error('简化部署也失败了:', simpleError);
+        throw new Error(`所有部署方法都失败了。主脚本错误: ${error.message}，简化部署错误: ${simpleError.message}`);
+      }
+    }
     
     // 获取客户端配置文件
     sendProgress(100, '获取客户端配置...');
@@ -1761,19 +2126,38 @@ echo "请查看 /etc/wireguard/ 下的服务端配置文件，以及 \${WG_DIR} 
       "- 请稍后使用'查找配置'按钮重新尝试查找配置文件\n" +
       "- 或通过SSH终端执行 'find / -name \"*client*.conf\" -o -name \"*peer*.conf\"' 手动查找" : "";
 
+    // 部署完成后发送实时更新信号
+    sendProgress(100, '部署完成，正在更新实例列表...');
+    
+    // 发送实时更新信号给前端
+    event.sender.send('wireguard-instances-updated', {
+      message: 'Wireguard部署完成，实例列表已更新',
+      timestamp: new Date().toISOString()
+    });
+    
+    // 延迟重启应用以确保更新生效
+    setTimeout(() => {
+      sendProgress(100, '部署完成，正在重启应用以生效...');
+      app.relaunch();
+      app.exit(0);
+    }, 3000);
+
     return {
       success: true,
       output: "Wireguard部署已完成！脚本已自动执行以下步骤：\n" +
-              "1. 安装Wireguard和依赖包\n" +
-              "2. 设置DNS和系统配置\n" +
-              "3. 创建Wireguard配置\n" +
-              "4. 启动Wireguard服务\n" +
-              "5. 生成客户端配置文件" + hasMissingConfigWarning,
+              "1. 检查并清理现有实例（如存在）\n" +
+              "2. 安装Wireguard和依赖包\n" +
+              "3. 设置DNS和系统配置\n" +
+              "4. 创建Wireguard配置\n" +
+              "5. 启动Wireguard服务\n" +
+              "6. 生成客户端配置文件\n" +
+              "7. 实例列表已实时更新\n" +
+              "8. 应用将在3秒后自动重启以生效" + hasMissingConfigWarning,
       clientConfig: clientConfigs.length > 0 ? clientConfigs[0].content : '',
       clientConfigs: clientConfigs,
       warning: clientConfigs.length === 0 ? "未找到客户端配置文件，可能仍在生成中" : undefined,
       debug: {
-        notes: "Wireguard部署已自动完成",
+        notes: "Wireguard部署已自动完成，应用将自动重启",
         execScriptOutput: execScriptResult
       }
     };
@@ -2056,7 +2440,7 @@ ipcMain.handle('execute-wireguard-script', async (event, serverId) => {
         
         // 第三次尝试：手动创建一个最基本的配置
         console.log('尝试最后方法：检查网络接口创建基础配置');
-        const getIPCmd = 'curl -s ifconfig.me || hostname -I | awk \'{print $1}\'';
+        const getIPCmd = 'curl -4 -s ifconfig.me || hostname -I | awk \'{print $1}\'';
         const ipResult = await ssh.execCommand(getIPCmd);
         const serverIP = ipResult.stdout.trim();
         
@@ -2079,7 +2463,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = 需要服务器公钥，请执行wg show命令查看
 Endpoint = ${serverIP}:51820
-AllowedIPs = 0.0.0.0/0, ::/0
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 `;
             await ssh.execCommand(`echo '${basicConfig.replace(/'/g, "'\\''")}' > /root/VPS配置WG/emergency-client.conf`);

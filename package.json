@@ -88,14 +88,6 @@
         "to": "billing_manager.py"
       },
       {
-        "from": "vps_manager.py",
-        "to": "vps_manager.py"
-      },
-      {
-        "from": "vps_connection.py",
-        "to": "vps_connection.py"
-      },
-      {
         "from": "requirements.txt",
         "to": "requirements.txt"
       },

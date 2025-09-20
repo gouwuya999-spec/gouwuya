@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deployWireguard: (serverId) => ipcRenderer.invoke('deploy-wireguard', serverId),
   executeWireguardScript: (serverId) => ipcRenderer.invoke('execute-wireguard-script', serverId),
   onWireguardDeployProgress: (callback) => ipcRenderer.on('wireguard-deploy-progress', (_, data) => callback(data)),
+  onWireguardInstancesUpdated: (callback) => ipcRenderer.on('wireguard-instances-updated', (_, data) => callback(data)),
   // 添加Wireguard peer管理相关
   getWireguardInstances: (serverId) => ipcRenderer.invoke('get-wireguard-instances', serverId),
   getWireguardInstanceDetails: (serverId, instanceName) => ipcRenderer.invoke('get-wireguard-instance-details', serverId, instanceName),
