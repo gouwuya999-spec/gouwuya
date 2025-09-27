@@ -65,7 +65,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": false,
       "artifactName": "VPS管理系统_安装版_v${version}.exe"
     },
     "files": [
