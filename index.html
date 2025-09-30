@@ -1925,6 +1925,106 @@
       max-width: 40%;
       text-align: right;
     }
+    
+    /* 连接状态样式 */
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 8px 0;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    .connection-status.connected {
+      color: #4CAF50;
+    }
+    
+    .connection-status.connecting {
+      color: #FF9800;
+    }
+    
+    .connection-status.disconnected {
+      color: #f44336;
+    }
+    
+    .connection-status i {
+      font-size: 12px;
+    }
+    
+    /* 连接按钮样式 */
+    button.connected {
+      background-color: #f44336;
+    }
+    
+    button.connected:hover {
+      background-color: #d32f2f;
+    }
+    
+    button.connecting {
+      background-color: #FF9800;
+      cursor: not-allowed;
+    }
+    
+    button.connecting:hover {
+      background-color: #FF9800;
+    }
+    
+    /* 通知样式 */
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 2000;
+      max-width: 400px;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    .notification.success {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    .notification.error {
+      background-color: #f44336;
+      color: white;
+    }
+    
+    .notification.info {
+      background-color: #2196F3;
+      color: white;
+    }
+    
+    .notification-close {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 0;
+      margin-left: auto;
+      font-size: 16px;
+    }
+    
+    .notification-close:hover {
+      opacity: 0.8;
+    }
+    
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1948,6 +2048,19 @@
     </div>
     
     <div v-if="!loading" class="main-content">
+      <!-- 通知消息 -->
+      <div v-if="notification" class="notification" :class="notification.type">
+        <i class="fas" :class="{
+          'fa-check-circle': notification.type === 'success',
+          'fa-exclamation-circle': notification.type === 'error',
+          'fa-info-circle': notification.type === 'info'
+        }"></i>
+        <span>{{ notification.message }}</span>
+        <button @click="notification = null" class="notification-close">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
       <div class="header">
         <div class="app-title">
           <h2>{{ activeTab === 'servers' ? '服务器列表' : activeTab === 'wireguard' ? 'Wireguard管理' : '月账单统计' }}</h2>
@@ -1971,8 +2084,29 @@
             </div>
             <p v-if="server.ipLocation" class="ip-location"><i class="fas fa-map-marker-alt"></i> {{ server.ipLocation }}</p>
             <p>{{ server.username }}</p>
+            <!-- 连接状态显示 -->
+            <div class="connection-status" :class="getServerConnectionStatus(server.id)">
+              <i class="fas" :class="{
+                'fa-circle': getServerConnectionStatus(server.id) === 'connected',
+                'fa-circle-notch fa-spin': getServerConnectionStatus(server.id) === 'connecting',
+                'fa-circle': getServerConnectionStatus(server.id) === 'disconnected'
+              }"></i>
+              <span>{{ 
+                getServerConnectionStatus(server.id) === 'connected' ? '在线' : 
+                getServerConnectionStatus(server.id) === 'connecting' ? '连接中...' : 
+                '离线' 
+              }}</span>
+            </div>
             <div class="server-actions">
-              <button @click="connectServer(server)">连接</button>
+              <button @click="connectServer(server)" 
+                      :class="{
+                        'connected': isServerConnected(server.id),
+                        'connecting': getServerConnectionStatus(server.id) === 'connecting'
+                      }"
+                      :disabled="getServerConnectionStatus(server.id) === 'connecting'">
+                <i class="fas" :class="isServerConnected(server.id) ? 'fa-unlink' : 'fa-link'"></i>
+                {{ isServerConnected(server.id) ? '断开' : '连接' }}
+              </button>
               <button @click="testServerConnection(server.id)" :disabled="isTestingConnection">测试连接</button>
               <button @click="deployWireguardFromList(server)" class="action-button">重新部署Wireguard</button>
               <button class="danger" @click="deleteServer(server.id)">删除</button>

@@ -13,6 +13,9 @@ createApp({
       showAddServerModal: false,
       showSSHTerminalModal: false,
       appVersion: '加载中...',
+      // 添加连接状态管理
+      connectedServers: new Set(), // 存储已连接服务器的ID
+      connectionStatus: {}, // 存储每个服务器的连接状态
       newServer: {
         name: '',
         host: '',
@@ -188,6 +191,12 @@ createApp({
           return;
         }
         this.servers = await window.electronAPI.getServers();
+        
+        // 初始化所有服务器的连接状态
+        this.servers.forEach(server => {
+          this.connectionStatus[server.id] = 'disconnected';
+        });
+        
         console.log('已加载服务器列表:', this.servers);
       } catch (error) {
         console.error('加载服务器列表失败:', error);
@@ -221,6 +230,9 @@ createApp({
         if (result.success) {
           this.servers.push(serverData);
           
+          // 初始化新服务器的连接状态
+          this.connectionStatus[serverData.id] = 'disconnected';
+          
           // 重置表单
           this.newServer = {
             name: '',
@@ -233,6 +245,7 @@ createApp({
           };
           
           this.showAddServerModal = false;
+          this.showNotification(`服务器 ${serverData.name} 已添加`, 'success');
         }
       } catch (error) {
         console.error('添加服务器失败:', error);
@@ -244,8 +257,23 @@ createApp({
     async deleteServer(id) {
       try {
         if (confirm('确定要删除此服务器吗?')) {
+          // 如果服务器已连接，先断开连接
+          if (this.connectedServers.has(id)) {
+            const server = this.servers.find(s => s.id === id);
+            if (server) {
+              await this.disconnectServer(server);
+            }
+          }
+          
+          // 删除服务器
           await window.electronAPI.deleteServer(id);
           this.servers = this.servers.filter(server => server.id !== id);
+          
+          // 清理连接状态
+          this.connectedServers.delete(id);
+          delete this.connectionStatus[id];
+          
+          this.showNotification('服务器已删除', 'info');
         }
       } catch (error) {
         console.error('删除服务器失败:', error);
@@ -289,57 +317,92 @@ createApp({
       }
     },
     
-    // 连接服务器
+    // 连接服务器 - 修改为直接连接并显示状态
     async connectServer(server) {
       try {
-        this.showSSHTerminalModal = true;
-        // 清空上一个连接的配置相关数据
-        this.clientConfigs = [];
-        this.foundConfigFiles = [];
-        this.currentConfigIndex = -1;
-        this.configContent = '';
-        this.qrCodeImage = null;
-        this.showConfigContent = false;
-        this.wireguardResult = null;
+        // 如果已经连接，则断开连接
+        if (this.connectedServers.has(server.id)) {
+          await this.disconnectServer(server);
+          return;
+        }
         
-        this.currentConnectedServer = server;
-        this.sshOutput = `正在连接到 ${server.name} (${server.host})...\n`;
+        // 设置连接状态为连接中
+        this.connectionStatus[server.id] = 'connecting';
+        this.$forceUpdate(); // 强制更新UI
         
+        console.log(`正在连接到 ${server.name} (${server.host})...`);
+        
+        // 建立SSH连接
         const result = await window.electronAPI.openSSHTerminal(server.id);
         
         if (result.success) {
-          this.sshOutput += `已连接到 ${server.host}\n`;
+          // 连接成功，更新状态
+          this.connectedServers.add(server.id);
+          this.connectionStatus[server.id] = 'connected';
+          console.log(`已连接到 ${server.host}`);
           
-          // 自动检查Wireguard状态
-          try {
-            const wireguardResult = await window.electronAPI.executeWireguardScript(server.id);
-            if (wireguardResult.success) {
-              this.sshOutput += `\n> Wireguard状态检查:\n${wireguardResult.output}\n`;
-              
-              // 如果有发现客户端配置文件，显示它们
-              if (wireguardResult.clientConfigs && wireguardResult.clientConfigs.length > 0) {
-                this.clientConfigs = wireguardResult.clientConfigs;
-                this.showConfigContent = true;
-                
-                // 为第一个配置生成二维码
-                await this.generateQRCodeFromConfig(wireguardResult.clientConfigs[0].content);
-                
-                // 显示找到配置的提示
-                this.sshOutput += `\n已找到 ${wireguardResult.clientConfigs.length} 个客户端配置文件。\n`;
-                this.sshOutput += `您可以使用界面上的"查找配置"按钮查看所有配置文件并生成二维码。\n`;
-              }
-            }
-          } catch (wireguardError) {
-            console.error('Wireguard状态检查失败:', wireguardError);
-            this.sshOutput += `\n> Wireguard状态检查失败: ${wireguardError.message || '未知错误'}\n`;
-          }
+          // 显示成功通知
+          this.showNotification(`已连接到 ${server.name}`, 'success');
         } else {
-          this.sshOutput += `连接失败: ${result.error}\n`;
+          // 连接失败
+          this.connectionStatus[server.id] = 'disconnected';
+          console.error(`连接失败: ${result.error}`);
+          this.showNotification(`连接失败: ${result.error}`, 'error');
         }
       } catch (error) {
+        // 连接异常
+        this.connectionStatus[server.id] = 'disconnected';
         console.error('连接服务器失败:', error);
-        this.sshOutput += `连接失败: ${error.message || '未知错误'}\n`;
+        this.showNotification(`连接失败: ${error.message || '未知错误'}`, 'error');
+      } finally {
+        this.$forceUpdate(); // 强制更新UI
       }
+    },
+    
+    // 断开服务器连接
+    async disconnectServer(server) {
+      try {
+        console.log(`正在断开与 ${server.name} 的连接...`);
+        
+        // 关闭SSH连接
+        await window.electronAPI.closeSSHConnection(server.id);
+        
+        // 更新状态
+        this.connectedServers.delete(server.id);
+        this.connectionStatus[server.id] = 'disconnected';
+        
+        console.log(`已断开与 ${server.name} 的连接`);
+        this.showNotification(`已断开与 ${server.name} 的连接`, 'info');
+      } catch (error) {
+        console.error('断开连接失败:', error);
+        this.showNotification(`断开连接失败: ${error.message || '未知错误'}`, 'error');
+      } finally {
+        this.$forceUpdate(); // 强制更新UI
+      }
+    },
+    
+    // 显示通知消息
+    showNotification(message, type = 'info') {
+      this.notification = {
+        message: message,
+        type: type,
+        timestamp: Date.now()
+      };
+      
+      // 3秒后自动清除通知
+      setTimeout(() => {
+        this.notification = null;
+      }, 3000);
+    },
+    
+    // 获取服务器连接状态
+    getServerConnectionStatus(serverId) {
+      return this.connectionStatus[serverId] || 'disconnected';
+    },
+    
+    // 检查服务器是否已连接
+    isServerConnected(serverId) {
+      return this.connectedServers.has(serverId);
     },
     
     // 发送SSH命令
@@ -1582,6 +1645,9 @@ createApp({
               
               // 添加服务器到列表（永久保存）
               this.servers.push(tempServer);
+              
+              // 初始化新服务器的连接状态
+              this.connectionStatus[tempServer.id] = 'disconnected';
             } else {
               // 删除临时服务器
               await window.electronAPI.deleteServer(tempServer.id);
