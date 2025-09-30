@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeWireguardScript: (serverId) => ipcRenderer.invoke('execute-wireguard-script', serverId),
   onWireguardDeployProgress: (callback) => ipcRenderer.on('wireguard-deploy-progress', (_, data) => callback(data)),
   onWireguardInstancesUpdated: (callback) => ipcRenderer.on('wireguard-instances-updated', (_, data) => callback(data)),
+  
+  // Wireguard 诊断和修复相关
+  diagnoseWireguard: (serverId) => ipcRenderer.invoke('diagnose-wireguard', serverId),
+  quickFixWireguard: (serverId) => ipcRenderer.invoke('quick-fix-wireguard', serverId),
   // 添加Wireguard peer管理相关
   getWireguardInstances: (serverId) => ipcRenderer.invoke('get-wireguard-instances', serverId),
   getWireguardInstanceDetails: (serverId, instanceName) => ipcRenderer.invoke('get-wireguard-instance-details', serverId, instanceName),
@@ -182,5 +186,9 @@ window.electronAPI = {
   getWireguardInstanceDetails: (serverId, instanceName) => ipcRenderer.invoke('get-wireguard-instance-details', serverId, instanceName),
   addWireguardPeer: (serverId, instanceName) => ipcRenderer.invoke('add-wireguard-peer', serverId, instanceName),
   deleteWireguardPeer: (serverId, instanceName, peerNumber) => ipcRenderer.invoke('delete-wireguard-peer', serverId, instanceName, peerNumber),
-  forceSyncWireguardConfigs: (serverId) => ipcRenderer.invoke('force-sync-wireguard-client-configs', serverId)
+  forceSyncWireguardConfigs: (serverId) => ipcRenderer.invoke('force-sync-wireguard-client-configs', serverId),
+  
+  // Wireguard 诊断和修复相关
+  diagnoseWireguard: (serverId) => ipcRenderer.invoke('diagnose-wireguard', serverId),
+  quickFixWireguard: (serverId) => ipcRenderer.invoke('quick-fix-wireguard', serverId)
 }; 
