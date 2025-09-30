@@ -1,5 +1,5 @@
 nat_fee: 0
-total_bill: 198.9
+total_bill: 199.0
 vps_servers:
 - cancel_date: 2025/06/26
   country: 德国 法兰克福 黑森州
@@ -30,8 +30,8 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - cancel_date: 2025/06/26
   country: 印度 班加羅爾 卡纳塔克邦
@@ -51,8 +51,8 @@ vps_servers:
   purchase_date: 2025/04/15
   start_date: 2025/04/15
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - country: 德国 法兰克福 黑森州
   ip_address: 95.179.252.158
@@ -61,8 +61,8 @@ vps_servers:
   purchase_date: 2025/04/29
   start_date: 2025/04/29
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - cancel_date: 2025/08/30
   country: 德国 法兰克福 黑森州
@@ -82,8 +82,8 @@ vps_servers:
   purchase_date: 2025/05/14
   start_date: 2025/05/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - cancel_date: 2025/07/26
   country: 德国 法兰克福 黑森州
@@ -114,8 +114,8 @@ vps_servers:
   purchase_date: 2025/05/14
   start_date: 2025/05/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - country: 德国 法兰克福 黑森州
   ip_address: 92.119.182.243
@@ -124,8 +124,8 @@ vps_servers:
   purchase_date: 2025/05/14
   start_date: 2025/05/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - country: 德国 法兰克福 黑森州
   ip_address: 91.246.193.64
@@ -134,8 +134,8 @@ vps_servers:
   purchase_date: 2025/05/14
   start_date: 2025/05/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - country: 德国 慕尼黑 巴伐利亚州
   ip_address: 104.239.77.251
@@ -144,8 +144,8 @@ vps_servers:
   purchase_date: 2025/05/14
   start_date: 2025/05/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - cancel_date: ''
   country: 德国 法兰克福 黑森州
@@ -155,8 +155,8 @@ vps_servers:
   purchase_date: 2025/02/14
   start_date: 2025/02/14
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false
 - cancel_date: 2025/08/30
   country: 肯尼亚 奈洛比 內羅畢郡
@@ -177,6 +177,6 @@ vps_servers:
   purchase_date: 2025/07/26
   start_date: 2025/07/26
   status: 在用
-  total_price: 19.89
-  usage_period: 29天20小时4分钟
+  total_price: 19.9
+  usage_period: 29天20小时19分钟
   use_nat: false

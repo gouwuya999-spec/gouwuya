@@ -61,6 +61,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('generate-qrcode', data);
   },
   
+  // 导出Wireguard配置
+  exportWireguardConfig: async (config, filename) => {
+    console.log('preload: 调用exportWireguardConfig');
+    return await ipcRenderer.invoke('export-wireguard-config', config, filename);
+  },
+  
   // 月账单统计相关
   getCurrentMonthBill: async () => {
     console.log('preload: 调用getCurrentMonthBill');
@@ -171,6 +177,7 @@ window.electronAPI = {
   closeSSHConnection: (serverId) => ipcRenderer.invoke('close-ssh-connection', serverId),
   executeWireguardScript: (serverId) => ipcRenderer.invoke('execute-wireguard-script', serverId),
   generateQRCode: (data) => ipcRenderer.invoke('generate-qrcode', data),
+  exportWireguardConfig: (config, filename) => ipcRenderer.invoke('export-wireguard-config', config, filename),
   getCurrentMonthBill: () => ipcRenderer.invoke('get-current-month-bill'),
   getMonthlyBill: (year, month) => ipcRenderer.invoke('get-monthly-bill', year, month),
   getMonthlyBillSummary: () => ipcRenderer.invoke('get-monthly-bill-summary'),

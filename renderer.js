@@ -2171,6 +2171,32 @@ createApp({
       }
     },
     
+    // 导出Peer配置
+    async exportPeerConfig(peer) {
+      if (!peer) return;
+      
+      try {
+        console.log(`导出Peer ${peer.number} 配置:`, peer);
+        
+        if (!peer.config) {
+          alert('配置内容为空，无法导出');
+          return;
+        }
+        
+        // 调用主进程导出配置
+        const result = await window.electronAPI.exportWireguardConfig(peer.config, `wg-peer${peer.number}.conf`);
+        
+        if (result.success) {
+          this.showNotification(`Peer ${peer.number} 配置文件已导出到: ${result.filePath}`, 'success');
+        } else {
+          this.showNotification(`导出失败: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        console.error('导出Peer配置失败:', error);
+        this.showNotification('导出Peer配置失败: ' + (error.message || '未知错误'), 'error');
+      }
+    },
+    
     // 添加Peer节点
     async addPeer() {
       if (!this.wireguardSelectedServer || !this.wireguardSelectedInstance) {

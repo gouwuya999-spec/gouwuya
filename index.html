@@ -2284,6 +2284,7 @@
                         <td class="truncate-text">{{ peer.publicKey }}</td>
                         <td>
                           <button @click="viewPeerConfig(peer)" class="btn btn-success btn-sm">查看配置</button>
+                          <button @click="exportPeerConfig(peer)" class="btn btn-info btn-sm">导出配置</button>
                           <button @click="deletePeer(peer.number)" class="btn btn-danger btn-sm">删除</button>
                         </td>
                       </tr>

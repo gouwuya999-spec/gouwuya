@@ -4206,3 +4206,45 @@ AllowedIPs = ${addressMatch[1]}
     };
   }
 });
+
+// 导出Wireguard配置文件
+ipcMain.handle('export-wireguard-config', async (event, config, filename) => {
+  try {
+    const { dialog } = require('electron');
+    const fs = require('fs').promises;
+    const path = require('path');
+    
+    // 打开保存对话框
+    const result = await dialog.showSaveDialog({
+      title: '导出Wireguard配置文件',
+      defaultPath: filename,
+      filters: [
+        { name: 'Wireguard配置文件', extensions: ['conf'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    });
+    
+    if (result.canceled) {
+      return {
+        success: false,
+        error: '用户取消了导出操作'
+      };
+    }
+    
+    // 写入配置文件
+    await fs.writeFile(result.filePath, config, 'utf8');
+    
+    console.log(`Wireguard配置文件已导出到: ${result.filePath}`);
+    
+    return {
+      success: true,
+      filePath: result.filePath
+    };
+  } catch (error) {
+    console.error('导出Wireguard配置文件失败:', error);
+    return {
+      success: false,
+      error: '导出失败: ' + error.message
+    };
+  }
+});
