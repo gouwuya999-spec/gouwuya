@@ -1,6 +1,6 @@
 {
   "name": "vps-management-system",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "VPS管理系统，支持多服务器管理和Wireguard一键部署",
   "main": "main.js",
   "scripts": {

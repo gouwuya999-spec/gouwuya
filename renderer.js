@@ -1782,27 +1782,31 @@ createApp({
     async detectServerIp() {
       const ip = this.newServer.host;
       if (!ip) {
-        alert('请输入IP地址');
+        this.showNotification('请输入IP地址', 'warning');
         return;
       }
       
       const locationInfo = await this.detectIpLocation(ip);
       if (locationInfo) {
-        alert(`IP地理位置: ${locationInfo}`);
+        this.showNotification(`IP地理位置: ${locationInfo}`, 'success');
+        // 将地理位置信息保存到服务器对象中
+        this.newServer.ipLocation = locationInfo;
       }
     },
     
     // 在批量添加服务器中检测行IP
     async detectBatchServerIp(index) {
       if (!this.batchServers[index] || !this.batchServers[index].host) {
-        alert('请输入IP地址');
+        this.showNotification('请输入IP地址', 'warning');
         return;
       }
       
       const ip = this.batchServers[index].host;
       const locationInfo = await this.detectIpLocation(ip);
       if (locationInfo) {
-        alert(`IP地理位置: ${locationInfo}`);
+        this.showNotification(`IP地理位置: ${locationInfo}`, 'success');
+        // 将地理位置信息保存到服务器对象中
+        this.batchServers[index].ipLocation = locationInfo;
       }
     },
     
@@ -1810,20 +1814,21 @@ createApp({
     async detectVpsIp() {
       const ip = this.editingVps.ip_address;
       if (!ip) {
-        alert('请输入IP地址');
+        this.showNotification('请输入IP地址', 'warning');
         return;
       }
       
       const locationInfo = await this.detectIpLocation(ip);
       if (locationInfo) {
         this.editingVps.country = locationInfo;
+        this.showNotification(`IP地理位置: ${locationInfo}`, 'success');
       }
     },
     
     // 在批量添加VPS界面中检测IP
     async detectBatchVpsIp(index) {
       if (!this.batchVpsList[index] || !this.batchVpsList[index].ip_address) {
-        alert('请输入IP地址');
+        this.showNotification('请输入IP地址', 'warning');
         return;
       }
       
@@ -1831,13 +1836,14 @@ createApp({
       const locationInfo = await this.detectIpLocation(ip, index);
       if (locationInfo) {
         this.batchVpsList[index].country = locationInfo;
+        this.showNotification(`IP地理位置: ${locationInfo}`, 'success');
       }
     },
     
     // 检测已有服务器的IP地址
     async detectExistingServerIp(server) {
       if (!server || !server.host) {
-        alert('服务器IP地址不存在');
+        this.showNotification('服务器IP地址不存在', 'warning');
         return;
       }
       
@@ -1849,6 +1855,8 @@ createApp({
         
         // 确保Vue能够检测到这个变更
         this.servers = [...this.servers];
+        
+        this.showNotification(`IP地理位置: ${locationInfo}`, 'success');
       }
     },
     

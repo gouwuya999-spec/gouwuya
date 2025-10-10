@@ -1990,6 +1990,16 @@ class BillingManager:
             logger.error(f"生成月账单表格时出错: {str(e)}", exc_info=True)
             return pd.DataFrame(), []
     
+    def get_current_month_bill(self):
+        """
+        获取当前月份的账单数据
+        
+        Returns:
+            dict: 当前月份的账单数据
+        """
+        current_date = datetime.datetime.now()
+        return self.get_monthly_bill_data(current_date.year, current_date.month)
+    
     def get_monthly_bill_data(self, year, month):
         """
         获取指定月份的账单数据

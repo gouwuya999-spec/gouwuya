@@ -43,6 +43,74 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { dialog } = require('electron');
 
+// 获取Python可执行文件路径的辅助函数
+function getPythonExecutable() {
+  const { execSync } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  
+  // 常见的Python安装路径
+  const commonPythonPaths = [
+    'python',
+    'python3',
+    'py',
+    'C:\\Program Files\\Python311\\python.exe',
+    'C:\\Program Files\\Python310\\python.exe',
+    'C:\\Program Files\\Python39\\python.exe',
+    'C:\\Program Files\\Python38\\python.exe',
+    'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
+    'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Local\\Programs\\Python\\Python310\\python.exe'
+  ];
+  
+  for (const pythonPath of commonPythonPaths) {
+    try {
+      if (pythonPath.includes('\\') || pythonPath.includes('/')) {
+        // 绝对路径，检查文件是否存在
+        if (fs.existsSync(pythonPath)) {
+          execSync(`"${pythonPath}" --version`, { stdio: 'ignore' });
+          console.log(`找到Python: ${pythonPath}`);
+          return pythonPath;
+        }
+      } else {
+        // 命令名，尝试执行
+        execSync(`${pythonPath} --version`, { stdio: 'ignore' });
+        console.log(`找到Python命令: ${pythonPath}`);
+        return pythonPath;
+      }
+    } catch (e) {
+      // 继续尝试下一个路径
+      continue;
+    }
+  }
+  
+  // 如果都失败，返回默认的python
+  console.error('Python未找到，请确保Python已安装并添加到PATH环境变量中');
+  console.error('尝试的路径:', commonPythonPaths);
+  return 'python';
+}
+
+// 安全的Python进程调用函数
+function spawnPythonProcess(args, options = {}) {
+  const pythonCmd = getPythonExecutable();
+  console.log(`使用Python命令: ${pythonCmd}`);
+  
+  const process = spawn(pythonCmd, args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    ...options
+  });
+  
+  // 添加错误处理
+  process.on('error', (error) => {
+    console.error('Python进程启动失败:', error);
+    if (error.code === 'ENOENT') {
+      console.error('Python未安装或未添加到PATH环境变量中');
+      console.error('请安装Python并确保添加到系统PATH中');
+    }
+  });
+  
+  return process;
+}
+
 // 存储活跃的SSH连接
 const activeSSHConnections = new Map();
 
@@ -3089,7 +3157,7 @@ ipcMain.handle('get-current-month-bill', async () => {
     
     // 调用Python脚本获取当前月账单
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=get_current_month_bill'
     ], {
@@ -3158,7 +3226,15 @@ ipcMain.handle('get-current-month-bill', async () => {
           }
         } else {
           console.error(`获取${year}年${month}月账单失败 (${code}):`, error);
-          resolve({ success: false, error: error || '获取账单数据失败', code });
+          let errorMessage = '获取账单数据失败';
+          if (error.includes('python') || error.includes('Python')) {
+            errorMessage = 'Python环境问题: ' + error;
+          } else if (error.includes('ENOENT')) {
+            errorMessage = 'Python未找到，请确保Python已正确安装';
+          } else if (error) {
+            errorMessage = error;
+          }
+          resolve({ success: false, error: errorMessage, code });
         }
       });
     });
@@ -3182,7 +3258,7 @@ ipcMain.handle('get-monthly-bill', async (event, year, month) => {
     
     // 调用Python脚本获取指定月账单
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       '-u',  // 添加-u参数确保Python输出不被缓冲
       billingManagerPath,
       '--action=get_monthly_bill',
@@ -3227,7 +3303,15 @@ ipcMain.handle('get-monthly-bill', async (event, year, month) => {
           }
         } else {
           console.error(`获取月账单失败 (${code}):`, error);
-          resolve({ success: false, error: error || '获取账单数据失败' });
+          let errorMessage = '获取账单数据失败';
+          if (error.includes('python') || error.includes('Python')) {
+            errorMessage = 'Python环境问题: ' + error;
+          } else if (error.includes('ENOENT')) {
+            errorMessage = 'Python未找到，请确保Python已正确安装';
+          } else if (error) {
+            errorMessage = error;
+          }
+          resolve({ success: false, error: errorMessage, code });
         }
       });
     });
@@ -3243,7 +3327,7 @@ ipcMain.handle('get-monthly-bill-summary', async () => {
     
     // 调用Python脚本获取月账单汇总
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       '-u',  // 添加-u参数
       billingManagerPath,
       '--action=get_monthly_bill_summary'
@@ -3332,7 +3416,7 @@ ipcMain.handle('save-monthly-billing-to-excel', async () => {
     
     // 调用Python脚本导出Excel
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       '-u',  // 添加-u参数
       billingManagerPath,
       '--action=save_monthly_billing_to_excel',
@@ -3378,7 +3462,7 @@ ipcMain.handle('get-all-vps', async () => {
     
     // 调用Python脚本获取所有VPS
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       '-u',  // 添加-u参数
       billingManagerPath,
       '--action=get_all_vps'
@@ -3476,7 +3560,7 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
     
     // 调用Python脚本保存VPS
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=save_vps',
       `--vps_data=${vpsDataJson}`
@@ -3505,7 +3589,7 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
             const data = JSON.parse(result);
             // 确保更新VPS价格，这样在月账单统计中显示正确的数据
             const billingManagerPath = getResourcePath('billing_manager.py');
-            const updateProcess = spawn('py', [
+            const updateProcess = spawnPythonProcess([
               billingManagerPath,
               '--action=update_prices'
             ], {
@@ -3543,7 +3627,7 @@ ipcMain.handle('delete-vps', async (event, vpsName) => {
     
     // 调用Python脚本删除VPS
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=delete_vps',
       `--vps_name=${vpsName}`
@@ -3587,7 +3671,7 @@ ipcMain.handle('init-sample-vps-data', async () => {
     
     // 调用Python脚本初始化示例数据
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=init_sample_data'
     ], {
@@ -3633,7 +3717,7 @@ ipcMain.handle('batch-add-vps', async (event, vpsList) => {
     
     // 调用Python脚本批量添加VPS
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=batch_add_vps',
       `--vps_list=${vpsListJson}`
@@ -3700,7 +3784,7 @@ ipcMain.handle('update-vps-prices', async () => {
     
     // 调用Python脚本更新VPS价格
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       billingManagerPath,
       '--action=update_prices'
     ], {
@@ -3758,7 +3842,7 @@ ipcMain.handle('save-monthly-bill-to-excel', async (event, year, month) => {
     
     // 调用Python脚本导出Excel
     const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawn('py', [
+    const pythonProcess = spawnPythonProcess([
       '-u',  // 添加-u参数确保输出不被缓冲
       billingManagerPath,
       '--action=save_monthly_billing_to_excel',
