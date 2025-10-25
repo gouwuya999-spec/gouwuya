@@ -3460,76 +3460,105 @@ ipcMain.handle('get-all-vps', async () => {
   try {
     console.log('获取所有VPS数据');
     
-    // 调用Python脚本获取所有VPS
-    const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawnPythonProcess([
-      '-u',  // 添加-u参数
-      billingManagerPath,
-      '--action=get_all_vps'
-    ], {
-      cwd: app.isPackaged ? process.resourcesPath : __dirname
-    });
+    // 首先尝试使用本地存储（fallback）
+    if (!store) {
+      console.error('数据存储未初始化');
+      return { success: false, error: '数据存储未初始化' };
+    }
     
-    let result = '';
-    let error = '';
+    // 尝试从本地存储获取VPS数据
+    const localVpsData = store.get('vps_billing_data', []);
+    if (localVpsData && localVpsData.length > 0) {
+      console.log(`从本地存储获取到${localVpsData.length}条VPS数据`);
+      return { success: true, data: localVpsData };
+    }
     
-    // 获取标准输出，使用utf-8编码
-    pythonProcess.stdout.on('data', (data) => {
-      result += data.toString('utf-8');
-    });
-    
-    // 获取标准错误，使用utf-8编码
-    pythonProcess.stderr.on('data', (data) => {
-      error += data.toString('utf-8');
-    });
-    
-    // 等待进程完成
-    return new Promise((resolve) => {
-      pythonProcess.on('close', (code) => {
-        if (code === 0 && result) {
-          try {
-            console.log(`获取VPS数据原始数据: ${result.slice(0, 200)}...`);
-            const data = JSON.parse(result);
-            
-            // 验证数据是否为数组
-            if (Array.isArray(data)) {
-              console.log(`成功解析VPS数据, 数量: ${data.length}`);
-              
-              // 检查第一个VPS的数据格式
-              if (data.length > 0) {
-                console.log(`首个VPS数据示例: ${JSON.stringify(data[0])}`);
-              }
-              
-              resolve({ success: true, data });
-            } else {
-              console.error('解析VPS数据格式不正确:', data);
-              resolve({ success: false, error: 'VPS数据格式不正确', result });
-            }
-          } catch (parseError) {
-            console.error('解析VPS数据失败:', parseError);
-            console.error('原始数据片段:', result.slice(0, 500));
-            
-            // 尝试手动修复可能的编码问题
-            try {
-              const cleanedResult = result.replace(/\\'/g, "'").replace(/\\"/g, '"');
-              const data = JSON.parse(cleanedResult);
-              console.log('通过清理后成功解析VPS数据');
-              resolve({ success: true, data });
-            } catch (secondError) {
-              resolve({ 
-                success: false, 
-                error: `解析VPS数据失败: ${parseError.message}`, 
-                originalError: parseError.message,
-                result: result.slice(0, 500)
-              });
-            }
-          }
-        } else {
-          console.error(`获取VPS数据失败 (${code}):`, error);
-          resolve({ success: false, error: error || '获取VPS数据失败', code });
-        }
+    // 如果本地没有数据，尝试调用Python脚本
+    try {
+      const billingManagerPath = getResourcePath('billing_manager.py');
+      const pythonProcess = spawnPythonProcess([
+        '-u',  // 添加-u参数
+        billingManagerPath,
+        '--action=get_all_vps'
+      ], {
+        cwd: app.isPackaged ? process.resourcesPath : __dirname
       });
-    });
+      
+      let result = '';
+      let error = '';
+      
+      // 获取标准输出，使用utf-8编码
+      pythonProcess.stdout.on('data', (data) => {
+        result += data.toString('utf-8');
+      });
+      
+      // 获取标准错误，使用utf-8编码
+      pythonProcess.stderr.on('data', (data) => {
+        error += data.toString('utf-8');
+      });
+      
+      // 等待进程完成
+      return new Promise((resolve) => {
+        pythonProcess.on('close', (code) => {
+          if (code === 0 && result) {
+            try {
+              console.log(`获取VPS数据原始数据: ${result.slice(0, 200)}...`);
+              const data = JSON.parse(result);
+              
+              // 验证数据是否为数组
+              if (Array.isArray(data)) {
+                console.log(`成功解析VPS数据, 数量: ${data.length}`);
+                
+                // 保存到本地存储
+                store.set('vps_billing_data', data);
+                
+                // 检查第一个VPS的数据格式
+                if (data.length > 0) {
+                  console.log(`首个VPS数据示例: ${JSON.stringify(data[0])}`);
+                }
+                
+                resolve({ success: true, data });
+              } else {
+                console.error('解析VPS数据格式不正确:', data);
+                resolve({ success: false, error: 'VPS数据格式不正确', result });
+              }
+            } catch (parseError) {
+              console.error('解析VPS数据失败:', parseError);
+              console.error('原始数据片段:', result.slice(0, 500));
+              
+              // 尝试手动修复可能的编码问题
+              try {
+                const cleanedResult = result.replace(/\\'/g, "'").replace(/\\"/g, '"');
+                const data = JSON.parse(cleanedResult);
+                console.log('通过清理后成功解析VPS数据');
+                
+                // 保存到本地存储
+                store.set('vps_billing_data', data);
+                
+                resolve({ success: true, data });
+              } catch (secondError) {
+                resolve({ 
+                  success: false, 
+                  error: `解析VPS数据失败: ${parseError.message}`, 
+                  originalError: parseError.message,
+                  result: result.slice(0, 500)
+                });
+              }
+            }
+          } else {
+            console.error(`Python获取VPS数据失败 (${code}):`, error);
+            // Python调用失败，返回空数组
+            console.log('Python不可用，使用空数组');
+            resolve({ success: true, data: [] });
+          }
+        });
+      });
+    } catch (pythonError) {
+      console.error('Python调用失败:', pythonError);
+      // Python不可用，返回空数组
+      console.log('Python不可用，返回空数据');
+      return { success: true, data: [] };
+    }
   } catch (error) {
     console.error('获取VPS数据出错:', error);
     return { success: false, error: error.message };
@@ -3555,66 +3584,90 @@ ipcMain.handle('save-vps', async (event, vpsData) => {
       use_nat: !!vpsData.use_nat, // 确保是布尔值
     }));
     
+    // 先保存到本地存储（作为fallback）
+    if (store) {
+      const existingData = store.get('vps_billing_data', []);
+      const existingIndex = existingData.findIndex(v => v.name === cleanVpsData.name);
+      
+      if (existingIndex >= 0) {
+        existingData[existingIndex] = cleanVpsData;
+      } else {
+        existingData.push(cleanVpsData);
+      }
+      
+      store.set('vps_billing_data', existingData);
+      console.log('VPS数据已保存到本地存储');
+    }
+    
     // 将VPS数据转换为JSON字符串
     const vpsDataJson = JSON.stringify(cleanVpsData);
     
-    // 调用Python脚本保存VPS
-    const billingManagerPath = getResourcePath('billing_manager.py');
-    const pythonProcess = spawnPythonProcess([
-      billingManagerPath,
-      '--action=save_vps',
-      `--vps_data=${vpsDataJson}`
-    ], {
-      cwd: app.isPackaged ? process.resourcesPath : __dirname
-    });
-    
-    let result = '';
-    let error = '';
-    
-    // 获取标准输出
-    pythonProcess.stdout.on('data', (data) => {
-      result += data.toString();
-    });
-    
-    // 获取标准错误
-    pythonProcess.stderr.on('data', (data) => {
-      error += data.toString();
-    });
-    
-    // 等待进程完成
-    return new Promise((resolve) => {
-      pythonProcess.on('close', (code) => {
-        if (code === 0 && result) {
-          try {
-            const data = JSON.parse(result);
-            // 确保更新VPS价格，这样在月账单统计中显示正确的数据
-            const billingManagerPath = getResourcePath('billing_manager.py');
-            const updateProcess = spawnPythonProcess([
-              billingManagerPath,
-              '--action=update_prices'
-            ], {
-              cwd: app.isPackaged ? process.resourcesPath : __dirname
-            });
-            
-            updateProcess.on('close', (updateCode) => {
-              if (updateCode === 0) {
-                console.log('VPS价格更新成功');
-              } else {
-                console.warn('VPS价格更新警告:', updateCode);
-              }
-              // 无论价格更新是否成功，都返回保存结果
-              resolve({ success: true, data });
-            });
-          } catch (parseError) {
-            console.error('解析保存VPS结果失败:', parseError);
-            resolve({ success: false, error: '解析保存VPS结果失败', result });
-          }
-        } else {
-          console.error(`保存VPS失败 (${code}):`, error);
-          resolve({ success: false, error: error || '保存VPS失败' });
-        }
+    // 尝试调用Python脚本保存VPS（如果可用）
+    try {
+      const billingManagerPath = getResourcePath('billing_manager.py');
+      const pythonProcess = spawnPythonProcess([
+        billingManagerPath,
+        '--action=save_vps',
+        `--vps_data=${vpsDataJson}`
+      ], {
+        cwd: app.isPackaged ? process.resourcesPath : __dirname
       });
-    });
+      
+      let result = '';
+      let error = '';
+      
+      // 获取标准输出
+      pythonProcess.stdout.on('data', (data) => {
+        result += data.toString();
+      });
+      
+      // 获取标准错误
+      pythonProcess.stderr.on('data', (data) => {
+        error += data.toString();
+      });
+      
+      // 等待进程完成
+      return new Promise((resolve) => {
+        pythonProcess.on('close', (code) => {
+          if (code === 0 && result) {
+            try {
+              const data = JSON.parse(result);
+              // 确保更新VPS价格，这样在月账单统计中显示正确的数据
+              const billingManagerPath = getResourcePath('billing_manager.py');
+              const updateProcess = spawnPythonProcess([
+                billingManagerPath,
+                '--action=update_prices'
+              ], {
+                cwd: app.isPackaged ? process.resourcesPath : __dirname
+              });
+              
+              updateProcess.on('close', (updateCode) => {
+                if (updateCode === 0) {
+                  console.log('VPS价格更新成功');
+                } else {
+                  console.warn('VPS价格更新警告:', updateCode);
+                }
+                // 无论价格更新是否成功，都返回保存结果
+                resolve({ success: true, data });
+              });
+            } catch (parseError) {
+              console.error('解析保存VPS结果失败:', parseError);
+              resolve({ success: false, error: '解析保存VPS结果失败', result });
+            }
+          } else {
+            console.warn(`Python保存VPS失败 (${code}):`, error);
+            // Python不可用，但已经保存到本地存储，返回成功
+            console.log('Python不可用，但已保存到本地存储');
+            resolve({ success: true, data: cleanVpsData });
+          }
+        });
+      });
+    } catch (pythonError) {
+      console.warn('Python调用失败:', pythonError);
+      // Python不可用，但已经保存到本地存储，返回成功
+      console.log('Python不可用，但已保存到本地存储');
+      return { success: true, data: cleanVpsData };
+    }
   } catch (error) {
     console.error('保存VPS出错:', error);
     return { success: false, error: error.message || '保存VPS失败，请检查输入数据是否有效' };

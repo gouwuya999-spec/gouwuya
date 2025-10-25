@@ -1,0 +1,100 @@
+{
+  "name": "vps-management-system",
+  "version": "1.0.0",
+  "description": "VPS管理系统，支持多服务器管理和Wireguard一键部署",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder --win --x64",
+    "pack-win": "electron-builder --win --dir",
+    "pack-portable": "electron-builder --win --x64 --config portable.json",
+    "pack-custom": "electron-builder --win --x64 --config build-config.json"
+  },
+  "keywords": [
+    "vps",
+    "wireguard",
+    "management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "cross-env": "^10.0.0",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "electron-reloader": "^1.2.3",
+    "puppeteer": "^24.6.1",
+    "sharp": "^0.34.1",
+    "to-ico": "^1.1.5"
+  },
+  "dependencies": {
+    "codemirror": "^5.65.5",
+    "electron-clipboard-extended": "^1.1.1",
+    "electron-store": "^10.0.1",
+    "node-ssh": "^13.2.1",
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.13"
+  },
+  "build": {
+    "appId": "com.vps.management",
+    "productName": "VPS管理系统",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "VPS管理系统_便携版_v${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "artifactName": "VPS管理系统_安装版_v${version}.exe"
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/.bin",
+      "!**/*.{o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+      "!**/node_modules/cpu-features/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "billing_manager.py",
+        "to": "billing_manager.py"
+      },
+      {
+        "from": "requirements.txt",
+        "to": "requirements.txt"
+      },
+      {
+        "from": "exchange_rates",
+        "to": "exchange_rates"
+      }
+    ]
+  }
+}
