@@ -959,12 +959,30 @@ createApp({
             }
           });
         } else {
-          console.error('生成月账单失败:', result.error);
-          alert('生成月账单失败: ' + result.error);
+          console.warn('生成月账单失败，但不影响系统使用:', result.error);
+          // 不再显示错误弹框，避免干扰用户体验
+          // 可以设置一个默认的空账单数据
+          this.monthlyBill = {
+            '年份': year,
+            '月份': month,
+            'VPS数量': 0,
+            'NAT费用': 0,
+            '月总费用': 0,
+            '账单行': []
+          };
         }
       } catch (error) {
-        console.error('生成月账单失败:', error);
-        alert('生成月账单失败: ' + (error.message || '未知错误'));
+        console.warn('生成月账单失败，但不影响系统使用:', error);
+        // 不再显示错误弹框，避免干扰用户体验
+        // 可以设置一个默认的空账单数据
+        this.monthlyBill = {
+          '年份': year,
+          '月份': month,
+          'VPS数量': 0,
+          'NAT费用': 0,
+          '月总费用': 0,
+          '账单行': []
+        };
       }
     },
     
@@ -1144,12 +1162,12 @@ createApp({
             console.log('已更新VPS价格和使用时长:', this.vpsDataList);
           }
         } else {
-          console.error('更新VPS价格失败:', result.error);
-          alert('更新VPS价格失败: ' + result.error);
+          console.warn('更新VPS价格失败，但不影响账单生成:', result.error);
+          // 不再显示错误弹框，避免干扰用户体验
         }
       } catch (error) {
-        console.error('更新VPS价格失败:', error);
-        alert('更新VPS价格失败: ' + (error.message || '未知错误'));
+        console.warn('更新VPS价格失败，但不影响账单生成:', error);
+        // 不再显示错误弹框，避免干扰用户体验
       }
     },
     

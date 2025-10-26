@@ -1653,34 +1653,42 @@ class BillingManager:
         Returns:
             bool: 是否成功
         """
-        # 确保使用当前实时时间
-        current_time = datetime.datetime.now()
-        
-        for vps in self.vps_data:
-            # 实时计算使用时长，精确到分钟
-            usage_result = self.calculate_usage_period(vps, now=current_time)
-            if isinstance(usage_result, tuple) and len(usage_result) == 4:
-                usage_string, days, hours, minutes = usage_result
-                vps['usage_period'] = usage_string
-                
-                # 使用新的计费方法，确保实时计算
-                price_per_month = vps.get('price_per_month', 0)
-                if price_per_month:
-                    total_price = self.calculate_price_with_purchase_date(vps)
-                    vps['total_price'] = round(total_price, 2)  # 确保总价精确到2位小数
-            else:
-                # 向后兼容老格式
-                vps['usage_period'] = usage_result
-                
-                price_per_month = vps.get('price_per_month', 0)
-                
-                if vps['usage_period'] and price_per_month:
-                    # 使用旧的计算方法
-                    total_price = self.calculate_price_legacy(price_per_month, vps['usage_period'])
-                    vps['total_price'] = round(total_price, 2)  # 确保总价精确到2位小数
-        
-        self.calculate_total_bill()
-        return self.save_data()
+        try:
+            # 确保使用当前实时时间
+            current_time = datetime.datetime.now()
+            
+            for vps in self.vps_data:
+                try:
+                    # 实时计算使用时长，精确到分钟
+                    usage_result = self.calculate_usage_period(vps, now=current_time)
+                    if isinstance(usage_result, tuple) and len(usage_result) == 4:
+                        usage_string, days, hours, minutes = usage_result
+                        vps['usage_period'] = usage_string
+                        
+                        # 使用新的计费方法，确保实时计算
+                        price_per_month = vps.get('price_per_month', 0)
+                        if price_per_month:
+                            total_price = self.calculate_price_with_purchase_date(vps)
+                            vps['total_price'] = round(total_price, 2)  # 确保总价精确到2位小数
+                    else:
+                        # 向后兼容老格式
+                        vps['usage_period'] = usage_result
+                        
+                        price_per_month = vps.get('price_per_month', 0)
+                        
+                        if vps['usage_period'] and price_per_month:
+                            # 使用旧的计算方法
+                            total_price = self.calculate_price_legacy(price_per_month, vps['usage_period'])
+                            vps['total_price'] = round(total_price, 2)  # 确保总价精确到2位小数
+                except Exception as e:
+                    logger.error(f"更新VPS {vps.get('name', 'Unknown')} 价格时出错: {str(e)}")
+                    continue
+            
+            self.calculate_total_bill()
+            return self.save_data()
+        except Exception as e:
+            logger.error(f"更新VPS价格时出错: {str(e)}")
+            return False
         
     def calculate_price_legacy(self, price_per_month, usage_period):
         """
@@ -3155,8 +3163,8 @@ if __name__ == "__main__":
             
         elif args.action == 'update_prices':
             # 更新VPS价格
-            billing_manager.update_prices()
-            print(json.dumps({"success": True}, ensure_ascii=False))
+            success = billing_manager.update_prices()
+            print(json.dumps({"success": success}, ensure_ascii=False))
             
         elif args.action == 'batch_add_vps':
             # 检查是否提供了VPS列表数据
